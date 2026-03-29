@@ -16,12 +16,15 @@ import {
   getGitHubToken,
   createDraft,
   editDraft,
+  hasRemoteBranch,
+  getUnpushedCommitCount,
+  pushBranch,
 } from "@pr-buildr/core";
 import type { DraftState } from "@pr-buildr/core";
 import { readFile } from "node:fs/promises";
 import * as display from "../display.js";
 import { openInEditor } from "../editor.js";
-import { promptCreateAction } from "../prompts.js";
+import { promptCreateAction, promptPushRequired, promptPushOptional } from "../prompts.js";
 
 interface CreateOptions {
   base?: string;
@@ -88,17 +91,20 @@ async function runCreate(options: CreateOptions): Promise<void> {
   display.info("Head", currentBranch);
   display.info("Base", baseBranch);
 
-  // 4. Resolve template
+  // 4. Check if branch needs to be pushed to remote
+  await ensureBranchPushed(currentBranch, options.yes ?? false);
+
+  // 5. Resolve template
   const template = await resolveTemplate(repoRoot, options.template);
   display.info("Template", template.source === "builtin" ? "Built-in default" : `Repo (${template.path})`);
 
-  // 5. Check if AI is skipped (--no-ai or --body-file)
+  // 6. Check if AI is skipped (--no-ai or --body-file)
   if (options.ai === false || options.bodyFile) {
     await createWithoutAI(options, owner, repo, currentBranch, baseBranch, template.content);
     return;
   }
 
-  // 6. Gather context for AI
+  // 7. Gather context for AI
   const spinner = ora("Gathering git context...").start();
 
   const [diff, commits, files] = await Promise.all([
@@ -187,6 +193,89 @@ async function runCreate(options: CreateOptions): Promise<void> {
       }
     }
   }
+}
+
+/**
+ * Ensure the current branch exists on the remote and is up to date.
+ *
+ * Scenario 1: Branch not on remote → must push or cancel (can't create PR without it)
+ * Scenario 2: Branch on remote but has unpushed commits → push, continue, or cancel
+ * Scenario 3: Branch on remote, no unpushed commits → proceed silently
+ */
+async function ensureBranchPushed(branch: string, autoConfirm: boolean): Promise<void> {
+  const remoteBranchExists = await hasRemoteBranch(branch);
+
+  if (!remoteBranchExists) {
+    // Scenario 1: Branch not on remote — push is required
+    if (autoConfirm) {
+      const spinner = ora(`Pushing ${branch} to origin...`).start();
+      try {
+        await pushBranch(branch);
+        spinner.succeed(`Pushed ${branch} to origin.`);
+      } catch (err) {
+        spinner.fail(`Failed to push ${branch} to origin.`);
+        throw err;
+      }
+      return;
+    }
+
+    const action = await promptPushRequired(branch);
+    if (action === "cancel") {
+      display.warn("PR creation cancelled.");
+      process.exit(0);
+    }
+
+    const spinner = ora(`Pushing ${branch} to origin...`).start();
+    try {
+      await pushBranch(branch);
+      spinner.succeed(`Pushed ${branch} to origin.`);
+    } catch (err) {
+      spinner.fail(`Failed to push ${branch} to origin.`);
+      throw err;
+    }
+    return;
+  }
+
+  // Branch exists on remote — check for unpushed commits
+  const unpushedCount = await getUnpushedCommitCount(branch);
+
+  if (unpushedCount > 0) {
+    // Scenario 2: Has unpushed local commits
+    if (autoConfirm) {
+      const commitLabel = unpushedCount === 1 ? "1 commit" : `${unpushedCount} commits`;
+      const spinner = ora(`Pushing ${commitLabel} to origin...`).start();
+      try {
+        await pushBranch(branch);
+        spinner.succeed(`Pushed ${commitLabel} to origin.`);
+      } catch (err) {
+        spinner.fail("Failed to push to origin.");
+        throw err;
+      }
+      return;
+    }
+
+    const action = await promptPushOptional(branch, unpushedCount);
+    if (action === "cancel") {
+      display.warn("PR creation cancelled.");
+      process.exit(0);
+    }
+
+    if (action === "push") {
+      const commitLabel = unpushedCount === 1 ? "1 commit" : `${unpushedCount} commits`;
+      const spinner = ora(`Pushing ${commitLabel} to origin...`).start();
+      try {
+        await pushBranch(branch);
+        spinner.succeed(`Pushed ${commitLabel} to origin.`);
+      } catch (err) {
+        spinner.fail("Failed to push to origin.");
+        throw err;
+      }
+    }
+
+    // action === "continue" → proceed without pushing
+  }
+
+  // Scenario 3: Branch on remote, no unpushed commits → nothing to do
 }
 
 /**

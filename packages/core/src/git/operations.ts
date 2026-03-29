@@ -216,3 +216,53 @@ export async function getDefaultBranch(cwd?: string): Promise<string> {
       "Use --base <branch> to specify explicitly.",
   );
 }
+
+/**
+ * Check if a branch exists on a remote.
+ * Returns true if the branch is found on the remote, false otherwise.
+ */
+export async function hasRemoteBranch(
+  branch: string,
+  remote = "origin",
+  cwd?: string,
+): Promise<boolean> {
+  try {
+    const output = await execGit(["ls-remote", "--heads", remote, branch], cwd);
+    return output.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get the number of local commits that have not been pushed to the remote.
+ * Returns 0 if the branch has no upstream or on error.
+ */
+export async function getUnpushedCommitCount(
+  branch: string,
+  remote = "origin",
+  cwd?: string,
+): Promise<number> {
+  try {
+    const output = await execGit(
+      ["rev-list", "--count", `${remote}/${branch}..HEAD`],
+      cwd,
+    );
+    const count = parseInt(output.trim(), 10);
+    return isNaN(count) ? 0 : count;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Push a branch to a remote with upstream tracking.
+ * Runs: git push -u <remote> <branch>
+ */
+export async function pushBranch(
+  branch: string,
+  remote = "origin",
+  cwd?: string,
+): Promise<void> {
+  await execGit(["push", "-u", remote, branch], cwd);
+}
