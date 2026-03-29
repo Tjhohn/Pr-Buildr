@@ -3,11 +3,28 @@
 // Config
 export { resolveConfig } from "./config/resolver.js";
 export { defaultConfig } from "./config/defaults.js";
-export type { PrBuildrConfig, AIConfig, GitHubConfig, ProviderConfig } from "./config/schema.js";
+export { readConfigFile, writeConfigFile } from "./config/file.js";
+export { CONFIG_FILENAME, VALID_PROVIDERS } from "./config/schema.js";
+export type {
+  PrBuildrConfig,
+  AIConfig,
+  GitHubConfig,
+  ProviderConfig,
+  ValidProvider,
+} from "./config/schema.js";
 
 // Git
-export { getDiff, getCommitLog, getChangedFiles, getCurrentBranch, getBranches } from "./git/operations.js";
+export {
+  getDiff,
+  getCommitLog,
+  getChangedFiles,
+  getCurrentBranch,
+  getBranches,
+  getDefaultBranch,
+} from "./git/operations.js";
 export { getRepoRoot, getRemoteUrl, parseGitHubRepo } from "./git/repo.js";
+export { execGit } from "./git/exec.js";
+export { GitError } from "./git/types.js";
 export type { Commit, FileSummary, GitHubRepoInfo } from "./git/types.js";
 
 // Template

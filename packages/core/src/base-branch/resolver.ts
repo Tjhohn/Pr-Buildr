@@ -1,4 +1,5 @@
 import type { PrBuildrConfig } from "../config/schema.js";
+import { getDefaultBranch } from "../git/operations.js";
 
 /**
  * Resolve the base branch for the current PR.
@@ -10,10 +11,26 @@ import type { PrBuildrConfig } from "../config/schema.js";
  * 4. Detect main/master via git
  */
 export async function resolveBaseBranch(
-  _currentBranch: string,
+  currentBranch: string,
   config: PrBuildrConfig,
   explicit?: string,
 ): Promise<string> {
-  // Stub — implementation in Phase 2
-  return explicit ?? config.defaultBase ?? "main";
+  // 1. Explicit selection
+  if (explicit) {
+    return explicit;
+  }
+
+  // 2. Saved branch base
+  const saved = config.branchBases?.[currentBranch];
+  if (saved) {
+    return saved;
+  }
+
+  // 3. Config default
+  if (config.defaultBase) {
+    return config.defaultBase;
+  }
+
+  // 4. Auto-detect from git
+  return getDefaultBranch();
 }

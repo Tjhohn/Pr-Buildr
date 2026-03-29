@@ -18,3 +18,15 @@ export interface GitHubRepoInfo {
   owner: string;
   repo: string;
 }
+
+export class GitError extends Error {
+  constructor(
+    message: string,
+    public readonly command: string,
+    public readonly exitCode: number,
+    public readonly stderr: string,
+  ) {
+    super(message);
+    this.name = "GitError";
+  }
+}
