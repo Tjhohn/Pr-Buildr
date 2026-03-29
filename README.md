@@ -51,7 +51,7 @@ export GITHUB_TOKEN="github_pat_..."
 Add it to your shell profile (~/.bashrc, ~/.zshrc, etc.) to persist it.
 ## Usage
 ### Create a PR
-#### Full interactive flow - generates draft, lets you review/edit, then creates (will confirm branch in origin else will request to push to origin)
+#### Full interactive flow - generates draft, lets you review/edit, then creates (will confirm branch in origin else will request to push to origin, will also allow you to push commmits not in origin)
 pr-buildr create
 #### Create as a draft PR
 pr-buildr create --draft
