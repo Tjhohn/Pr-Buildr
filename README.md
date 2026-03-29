@@ -112,6 +112,10 @@ If none is found, a built-in default template is used.
 
 ## VS Code Extension
 PR Builder also works as a VS Code extension with a full graphical interface.
+## Example image of Interface
+<img width="1131" height="758" alt="image" src="https://github.com/user-attachments/assets/92ee50b9-13fd-48f6-8b15-1591f83d5db2" />
+
+
 ### Access
 Three ways to open the PR creation panel:
 - **Source Control panel** — click the `$(git-pull-request)` icon in the Source Control title bar
