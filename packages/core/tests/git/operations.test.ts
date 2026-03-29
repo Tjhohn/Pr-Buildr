@@ -14,6 +14,9 @@ import {
   getCurrentBranch,
   getBranches,
   getDefaultBranch,
+  hasRemoteBranch,
+  getUnpushedCommitCount,
+  pushBranch,
 } from "../../src/git/operations.js";
 
 const mockExecFile = vi.mocked(execFile);
@@ -273,5 +276,103 @@ describe("getDefaultBranch", () => {
   it("throws when no default branch found", async () => {
     mockGitError("not found");
     await expect(getDefaultBranch()).rejects.toThrow("Could not determine the default branch");
+  });
+});
+
+describe("hasRemoteBranch", () => {
+  it("returns true when branch exists on remote", async () => {
+    mockGitOutput("abc123\trefs/heads/feature/test");
+    const result = await hasRemoteBranch("feature/test");
+    expect(result).toBe(true);
+    expect(mockExecFile).toHaveBeenCalledWith(
+      "git",
+      ["ls-remote", "--heads", "origin", "feature/test"],
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
+  it("returns false when branch does not exist on remote", async () => {
+    mockGitOutput("");
+    const result = await hasRemoteBranch("feature/nonexistent");
+    expect(result).toBe(false);
+  });
+
+  it("returns false on error", async () => {
+    mockGitError("fatal: could not read from remote");
+    const result = await hasRemoteBranch("feature/test");
+    expect(result).toBe(false);
+  });
+
+  it("uses custom remote name", async () => {
+    mockGitOutput("abc123\trefs/heads/feature/test");
+    await hasRemoteBranch("feature/test", "upstream");
+    expect(mockExecFile).toHaveBeenCalledWith(
+      "git",
+      ["ls-remote", "--heads", "upstream", "feature/test"],
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+});
+
+describe("getUnpushedCommitCount", () => {
+  it("returns count when there are unpushed commits", async () => {
+    mockGitOutput("3");
+    const count = await getUnpushedCommitCount("feature/test");
+    expect(count).toBe(3);
+    expect(mockExecFile).toHaveBeenCalledWith(
+      "git",
+      ["rev-list", "--count", "origin/feature/test..HEAD"],
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
+  it("returns 0 when all commits are pushed", async () => {
+    mockGitOutput("0");
+    const count = await getUnpushedCommitCount("feature/test");
+    expect(count).toBe(0);
+  });
+
+  it("returns 0 on error (e.g., no upstream)", async () => {
+    mockGitError("fatal: bad revision 'origin/feature/test..HEAD'");
+    const count = await getUnpushedCommitCount("feature/test");
+    expect(count).toBe(0);
+  });
+
+  it("returns 0 on non-numeric output", async () => {
+    mockGitOutput("not-a-number");
+    const count = await getUnpushedCommitCount("feature/test");
+    expect(count).toBe(0);
+  });
+});
+
+describe("pushBranch", () => {
+  it("calls git push with -u flag", async () => {
+    mockGitOutput("");
+    await pushBranch("feature/test");
+    expect(mockExecFile).toHaveBeenCalledWith(
+      "git",
+      ["push", "-u", "origin", "feature/test"],
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
+  it("uses custom remote name", async () => {
+    mockGitOutput("");
+    await pushBranch("feature/test", "upstream");
+    expect(mockExecFile).toHaveBeenCalledWith(
+      "git",
+      ["push", "-u", "upstream", "feature/test"],
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
+  it("throws on push failure", async () => {
+    mockGitError("fatal: remote rejected");
+    await expect(pushBranch("feature/test")).rejects.toThrow("remote rejected");
   });
 });

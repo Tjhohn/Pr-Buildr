@@ -72,3 +72,36 @@ export async function promptSelectProvider(): Promise<string> {
     ],
   });
 }
+
+/**
+ * Prompt when the branch has not been pushed to the remote at all.
+ * A push is required to create a PR — the only options are push or cancel.
+ */
+export async function promptPushRequired(branch: string): Promise<"push" | "cancel"> {
+  return select({
+    message: `Branch "${branch}" has not been pushed to origin. A remote branch is required to create a PR.`,
+    choices: [
+      { name: "Push to origin", value: "push" as const },
+      { name: "Cancel", value: "cancel" as const },
+    ],
+  });
+}
+
+/**
+ * Prompt when the branch exists on the remote but has unpushed local commits.
+ * User can push, continue without pushing, or cancel.
+ */
+export async function promptPushOptional(
+  branch: string,
+  commitCount: number,
+): Promise<"push" | "continue" | "cancel"> {
+  const commitLabel = commitCount === 1 ? "1 commit" : `${commitCount} commits`;
+  return select({
+    message: `Branch "${branch}" has ${commitLabel} not yet pushed to origin.`,
+    choices: [
+      { name: `Push ${commitLabel} to origin`, value: "push" as const },
+      { name: "Continue without pushing", value: "continue" as const },
+      { name: "Cancel", value: "cancel" as const },
+    ],
+  });
+}
