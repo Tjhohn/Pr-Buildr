@@ -1,0 +1,9 @@
+/* PR Builder webview styles */
+/* Implementation in Phase 5 */
+
+body {
+  padding: 16px;
+  font-family: var(--vscode-font-family);
+  color: var(--vscode-foreground);
+  background-color: var(--vscode-editor-background);
+}

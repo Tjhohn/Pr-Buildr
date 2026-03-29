@@ -1,0 +1,75 @@
+{
+  "name": "@pr-buildr/vscode",
+  "displayName": "PR Builder",
+  "description": "AI-powered pull request builder for VS Code",
+  "version": "0.1.0",
+  "publisher": "pr-buildr",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pr-buildr.createPR",
+        "title": "PR Builder: Create Pull Request"
+      },
+      {
+        "command": "pr-buildr.setBase",
+        "title": "PR Builder: Set Base Branch"
+      },
+      {
+        "command": "pr-buildr.showBase",
+        "title": "PR Builder: Show Base Branch"
+      },
+      {
+        "command": "pr-buildr.clearBase",
+        "title": "PR Builder: Clear Base Branch"
+      },
+      {
+        "command": "pr-buildr.regenerate",
+        "title": "PR Builder: Regenerate Draft"
+      }
+    ],
+    "configuration": {
+      "title": "PR Builder",
+      "properties": {
+        "pr-buildr.defaultProvider": {
+          "type": "string",
+          "default": "openai",
+          "enum": ["openai", "anthropic", "ollama", "openai-compatible"],
+          "description": "Default AI provider for generating PR drafts"
+        },
+        "pr-buildr.defaultModel": {
+          "type": "string",
+          "default": "",
+          "description": "Default AI model (leave empty to use provider default)"
+        },
+        "pr-buildr.githubToken": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub personal access token (falls back to GITHUB_TOKEN env var and VS Code GitHub auth)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "dev": "tsup --watch",
+    "package": "vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "@pr-buildr/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@vscode/webview-ui-toolkit": "^1.4.0"
+  },
+  "keywords": ["pull-request", "github", "ai", "vscode"],
+  "license": "MIT"
+}

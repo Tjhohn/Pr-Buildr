@@ -1,0 +1,29 @@
+{
+  "name": "@pr-buildr/cli",
+  "version": "0.1.0",
+  "description": "CLI for pr-buildr — create AI-powered pull requests from the terminal",
+  "type": "module",
+  "bin": {
+    "pr-buildr": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "dev": "tsup --watch"
+  },
+  "dependencies": {
+    "@pr-buildr/core": "workspace:*",
+    "commander": "^12.1.0",
+    "@inquirer/prompts": "^7.2.0",
+    "chalk": "^5.3.0",
+    "ora": "^8.1.0"
+  },
+  "keywords": ["pull-request", "github", "ai", "cli"],
+  "license": "MIT"
+}

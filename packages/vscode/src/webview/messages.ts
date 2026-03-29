@@ -1,0 +1,69 @@
+/**
+ * Message types for communication between extension host and webview.
+ */
+
+/** Messages sent from the extension to the webview */
+export type ToWebviewMessage =
+  | {
+      type: "init";
+      data: {
+        branches: string[];
+        base: string;
+        head: string;
+        templateSource: string;
+        provider: string;
+        model: string;
+      };
+    }
+  | {
+      type: "draft";
+      data: {
+        title: string;
+        body: string;
+      };
+    }
+  | {
+      type: "status";
+      data: {
+        message: string;
+        isError?: boolean;
+      };
+    }
+  | {
+      type: "creating";
+    }
+  | {
+      type: "created";
+      data: {
+        url: string;
+        number: number;
+        draft: boolean;
+      };
+    };
+
+/** Messages sent from the webview to the extension */
+export type FromWebviewMessage =
+  | {
+      type: "generate";
+      data: {
+        base: string;
+      };
+    }
+  | {
+      type: "create";
+      data: {
+        title: string;
+        body: string;
+        base: string;
+        draft: boolean;
+      };
+    }
+  | {
+      type: "changeBase";
+      data: {
+        base: string;
+      };
+    }
+  | {
+      type: "regenerate";
+    };
