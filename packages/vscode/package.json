@@ -1,15 +1,25 @@
 {
   "name": "pr-buildr-vscode",
   "displayName": "PR Builder",
-  "description": "AI-powered pull request builder for VS Code",
+  "description": "AI-powered pull request builder for VS Code — generate PR titles and descriptions from git diffs using OpenAI, Anthropic, or Ollama",
   "version": "0.1.0",
-  "publisher": "pr-buildr",
+  "publisher": "tjhohn",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": ["Other"],
   "activationEvents": ["onStartupFinished"],
   "main": "./dist/extension.js",
+  "icon": "icon.png",
+  "pricing": "Free",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tjhohn/Pr-Buildr"
+  },
+  "homepage": "https://github.com/Tjhohn/Pr-Buildr",
+  "bugs": {
+    "url": "https://github.com/Tjhohn/Pr-Buildr/issues"
+  },
   "contributes": {
     "commands": [
       {
@@ -83,6 +93,7 @@
     }
   },
   "scripts": {
+    "vscode:prepublish": "cd ../.. && pnpm run build",
     "build": "tsup",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
@@ -95,6 +106,16 @@
     "@types/vscode": "^1.85.0",
     "@vscode/webview-ui-toolkit": "^1.4.0"
   },
-  "keywords": ["pull-request", "github", "ai", "vscode"],
+  "keywords": [
+    "pull-request",
+    "github",
+    "ai",
+    "openai",
+    "anthropic",
+    "ollama",
+    "git",
+    "code-review",
+    "pr"
+  ],
   "license": "MIT"
 }

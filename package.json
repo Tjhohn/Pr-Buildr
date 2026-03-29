@@ -11,13 +11,16 @@
     "test:watch": "vitest",
     "lint": "eslint packages/*/src/**/*.ts",
     "clean": "pnpm -r run clean",
-    "typecheck": "pnpm -r run typecheck"
+    "typecheck": "pnpm -r run typecheck",
+    "pack-vscode": "pnpm run build && cd packages/vscode && pnpm exec vsce package --no-dependencies",
+    "publish-vscode": "pnpm run build && cd packages/vscode && pnpm exec vsce publish --no-dependencies"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
     "tsup": "^8.3.0",
     "vitest": "^2.1.0",
     "@types/node": "^20.17.0",
+    "@vscode/vsce": "^3.7.0",
     "prettier": "^3.4.0",
     "eslint": "^9.15.0"
   },

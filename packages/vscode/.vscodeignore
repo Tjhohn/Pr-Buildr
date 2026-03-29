@@ -1,0 +1,18 @@
+# Source files — not needed at runtime (bundled by tsup)
+src/**
+tests/**
+tsconfig.json
+tsup.config.ts
+
+# Dependencies — bundled into dist/extension.js by tsup
+node_modules/**
+
+# Source maps — not needed in published extension
+**/*.map
+
+# Dev/build config
+.gitignore
+.eslintrc*
+.prettierrc*
+
+# Keep: dist/, dist/webview/, package.json, README.md, LICENSE, icon.png
