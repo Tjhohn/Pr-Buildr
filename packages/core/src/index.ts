@@ -40,6 +40,7 @@ export { saveBase, getBase, clearBase } from "./base-branch/storage.js";
 export { createAIProvider } from "./ai/provider-factory.js";
 export { buildPrompt } from "./ai/prompt.js";
 export { parseAIResponse } from "./ai/parser.js";
+export { truncateDiff, categorizeFile } from "./ai/truncation.js";
 export type { AIProvider, DraftInput, DraftOutput } from "./ai/types.js";
 
 // Draft

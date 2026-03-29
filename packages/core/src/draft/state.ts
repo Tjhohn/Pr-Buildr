@@ -20,29 +20,48 @@ export function createDraft(
 
 /**
  * Update the current draft with user edits.
+ * Sets isEdited to true.
  */
 export function editDraft(
   state: DraftState,
-  _changes: Partial<{ title: string; body: string }>,
+  changes: Partial<{ title: string; body: string }>,
 ): DraftState {
-  // Stub — implementation in Phase 3
-  return { ...state };
+  return {
+    ...state,
+    current: {
+      title: changes.title ?? state.current.title,
+      body: changes.body ?? state.current.body,
+    },
+    isEdited: true,
+  };
 }
 
 /**
  * Change the base branch — marks the draft as stale.
+ * Does NOT destroy user edits.
  */
 export function changeBase(state: DraftState, newBase: string): DraftState {
-  return { ...state, base: newBase, isStale: true };
+  return {
+    ...state,
+    base: newBase,
+    isStale: true,
+  };
 }
 
 /**
  * Regenerate the draft with new AI content.
+ * Replaces both generated and current. Resets isEdited and isStale.
  */
 export function regenerateDraft(
   state: DraftState,
-  _newGenerated: { title: string; body: string },
+  newGenerated: { title: string; body: string },
 ): DraftState {
-  // Stub — implementation in Phase 3
-  return { ...state };
+  return {
+    generated: newGenerated,
+    current: { ...newGenerated },
+    base: state.base,
+    head: state.head,
+    isEdited: false,
+    isStale: false,
+  };
 }
