@@ -14,7 +14,8 @@
     "commands": [
       {
         "command": "pr-buildr.createPR",
-        "title": "PR Builder: Create Pull Request"
+        "title": "PR Builder: Create Pull Request",
+        "icon": "$(git-pull-request)"
       },
       {
         "command": "pr-buildr.setBase",
@@ -31,8 +32,29 @@
       {
         "command": "pr-buildr.regenerate",
         "title": "PR Builder: Regenerate Draft"
+      },
+      {
+        "command": "pr-buildr.setOpenAIKey",
+        "title": "PR Builder: Set OpenAI API Key"
+      },
+      {
+        "command": "pr-buildr.setAnthropicKey",
+        "title": "PR Builder: Set Anthropic API Key"
+      },
+      {
+        "command": "pr-buildr.setOpenAICompatibleKey",
+        "title": "PR Builder: Set OpenAI-Compatible API Key"
       }
     ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "pr-buildr.createPR",
+          "group": "navigation",
+          "when": "scmProvider == git"
+        }
+      ]
+    },
     "configuration": {
       "title": "PR Builder",
       "properties": {
@@ -47,10 +69,15 @@
           "default": "",
           "description": "Default AI model (leave empty to use provider default)"
         },
-        "pr-buildr.githubToken": {
+        "pr-buildr.ollamaBaseUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:11434",
+          "description": "Base URL for Ollama server"
+        },
+        "pr-buildr.openaiCompatibleBaseUrl": {
           "type": "string",
           "default": "",
-          "description": "GitHub personal access token (falls back to GITHUB_TOKEN env var and VS Code GitHub auth)"
+          "description": "Base URL for OpenAI-compatible API server"
         }
       }
     }

@@ -1,3 +1,261 @@
-// Webview client-side script
+// @ts-nocheck
+// PR Builder webview client-side script
 // Handles UI interactions and communicates with the extension host via postMessage.
-// Implementation in Phase 5.
+
+(function () {
+  const vscode = acquireVsCodeApi();
+
+  // State
+  let state = {
+    title: "",
+    body: "",
+    base: "",
+    head: "",
+    branches: [],
+    isDraft: false,
+    isGenerating: false,
+    isCreating: false,
+    isCreated: false,
+  };
+
+  // DOM elements (resolved after DOMContentLoaded)
+  let titleField;
+  let bodyField;
+  let baseDropdown;
+  let draftCheckbox;
+  let createBtn;
+  let regenerateBtn;
+  let statusMessage;
+  let statusBar;
+  let progressRing;
+  let successResult;
+  let staleWarning;
+
+  // Initialize DOM references
+  function initElements() {
+    titleField = document.getElementById("title-field");
+    bodyField = document.getElementById("body-field");
+    baseDropdown = document.getElementById("base-dropdown");
+    draftCheckbox = document.getElementById("draft-checkbox");
+    createBtn = document.getElementById("create-btn");
+    regenerateBtn = document.getElementById("regenerate-btn");
+    statusMessage = document.getElementById("status-message");
+    statusBar = document.getElementById("status-bar");
+    progressRing = document.getElementById("progress-ring");
+    successResult = document.getElementById("success-result");
+    staleWarning = document.getElementById("stale-warning");
+
+    // Event listeners
+    if (baseDropdown) {
+      baseDropdown.addEventListener("change", onBaseChange);
+    }
+    if (createBtn) {
+      createBtn.addEventListener("click", onCreate);
+    }
+    if (regenerateBtn) {
+      regenerateBtn.addEventListener("click", onRegenerate);
+    }
+    if (titleField) {
+      titleField.addEventListener("input", () => {
+        state.title = titleField.value;
+      });
+    }
+    if (bodyField) {
+      bodyField.addEventListener("input", () => {
+        state.body = bodyField.value;
+      });
+    }
+  }
+
+  // ── Incoming messages from extension ──
+
+  window.addEventListener("message", (event) => {
+    const msg = event.data;
+    switch (msg.type) {
+      case "init":
+        handleInit(msg.data);
+        break;
+      case "draft":
+        handleDraft(msg.data);
+        break;
+      case "status":
+        handleStatus(msg.data);
+        break;
+      case "creating":
+        handleCreating();
+        break;
+      case "created":
+        handleCreated(msg.data);
+        break;
+    }
+  });
+
+  function handleInit(data) {
+    state.head = data.head;
+    state.base = data.base;
+    state.branches = data.branches;
+
+    // Set head branch display
+    const headValue = document.getElementById("head-value");
+    if (headValue) headValue.textContent = data.head;
+
+    // Populate base dropdown
+    if (baseDropdown) {
+      baseDropdown.innerHTML = "";
+      for (const branch of data.branches) {
+        const option = document.createElement("vscode-option");
+        option.value = branch;
+        option.textContent = branch;
+        if (branch === data.base) {
+          option.selected = true;
+        }
+        baseDropdown.appendChild(option);
+      }
+    }
+
+    // Set info fields
+    const templateValue = document.getElementById("template-value");
+    if (templateValue) templateValue.textContent = data.templateSource;
+
+    const providerValue = document.getElementById("provider-value");
+    if (providerValue) providerValue.textContent = `${data.provider} / ${data.model}`;
+
+    // Show generating state
+    setGenerating(true);
+    setStatus("Generating PR draft...", false);
+  }
+
+  function handleDraft(data) {
+    state.title = data.title;
+    state.body = data.body;
+
+    if (titleField) titleField.value = data.title;
+    if (bodyField) bodyField.value = data.body;
+
+    setGenerating(false);
+    setStatus("Draft ready. Review and edit before creating.", false);
+    hideStaleWarning();
+  }
+
+  function handleStatus(data) {
+    setStatus(data.message, data.isError || false);
+    if (data.isError) {
+      setGenerating(false);
+      setCreating(false);
+    }
+  }
+
+  function handleCreating() {
+    setCreating(true);
+    setStatus("Creating pull request...", false);
+  }
+
+  function handleCreated(data) {
+    state.isCreated = true;
+    setCreating(false);
+
+    const label = data.draft ? "Draft PR" : "PR";
+    setStatus(`${label} #${data.number} created successfully!`, false, true);
+
+    // Show success result with link
+    if (successResult) {
+      successResult.innerHTML = `
+        <strong>${label} #${data.number} created!</strong><br>
+        <a href="${data.url}" title="Open in browser">${data.url}</a>
+      `;
+      successResult.classList.remove("hidden");
+    }
+
+    // Disable create button (already created)
+    if (createBtn) createBtn.disabled = true;
+  }
+
+  // ── Outgoing messages to extension ──
+
+  function onBaseChange() {
+    if (!baseDropdown) return;
+    state.base = baseDropdown.value;
+    vscode.postMessage({ type: "changeBase", data: { base: state.base } });
+    showStaleWarning();
+  }
+
+  function onCreate() {
+    const title = titleField ? titleField.value.trim() : "";
+    if (!title) {
+      setStatus("Title cannot be empty.", true);
+      return;
+    }
+
+    vscode.postMessage({
+      type: "create",
+      data: {
+        title: titleField ? titleField.value : "",
+        body: bodyField ? bodyField.value : "",
+        base: state.base,
+        draft: draftCheckbox ? draftCheckbox.checked : false,
+      },
+    });
+  }
+
+  function onRegenerate() {
+    setGenerating(true);
+    setStatus("Regenerating PR draft...", false);
+    hideStaleWarning();
+    if (successResult) successResult.classList.add("hidden");
+    if (createBtn) createBtn.disabled = false;
+    state.isCreated = false;
+    vscode.postMessage({ type: "regenerate" });
+  }
+
+  // ── UI state helpers ──
+
+  function setGenerating(generating) {
+    state.isGenerating = generating;
+    if (createBtn) createBtn.disabled = generating || state.isCreated;
+    if (regenerateBtn) regenerateBtn.disabled = generating;
+    if (titleField) titleField.disabled = generating;
+    if (bodyField) bodyField.disabled = generating;
+    if (progressRing) {
+      progressRing.classList.toggle("hidden", !generating);
+    }
+  }
+
+  function setCreating(creating) {
+    state.isCreating = creating;
+    if (createBtn) createBtn.disabled = creating;
+    if (regenerateBtn) regenerateBtn.disabled = creating;
+    if (titleField) titleField.disabled = creating;
+    if (bodyField) bodyField.disabled = creating;
+    if (baseDropdown) baseDropdown.disabled = creating;
+    if (progressRing) {
+      progressRing.classList.toggle("hidden", !creating);
+    }
+  }
+
+  function setStatus(message, isError, isSuccess) {
+    if (!statusMessage) return;
+    statusMessage.textContent = message;
+    statusMessage.className = "status-message";
+    if (isError) statusMessage.className = "status-error";
+    if (isSuccess) statusMessage.className = "status-success";
+  }
+
+  function showStaleWarning() {
+    if (staleWarning) staleWarning.classList.remove("hidden");
+  }
+
+  function hideStaleWarning() {
+    if (staleWarning) staleWarning.classList.add("hidden");
+  }
+
+  // ── Init ──
+
+  document.addEventListener("DOMContentLoaded", () => {
+    initElements();
+  });
+
+  // Fallback: if DOM is already loaded
+  if (document.readyState !== "loading") {
+    initElements();
+  }
+})();

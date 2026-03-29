@@ -1,8 +1,38 @@
+import * as vscode from "vscode";
+import { getRepoRoot } from "@pr-buildr/core";
+import { createOrShow } from "../webview/panel.js";
+
 /**
- * VS Code command: PR Builder: Create Pull Request
+ * Command: PR Builder: Create Pull Request
  *
- * Opens the webview panel with the draft editor.
+ * Detects the workspace git repo and opens the PR Builder webview panel.
  */
-export async function createPRCommand(): Promise<void> {
-  // Stub — implementation in Phase 5
+export async function createPRCommand(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  const folder = getWorkspaceFolder();
+  if (!folder) {
+    vscode.window.showErrorMessage(
+      "Open a folder to use PR Builder.",
+    );
+    return;
+  }
+
+  try {
+    const repoRoot = await getRepoRoot(folder);
+    createOrShow(context, repoRoot);
+  } catch {
+    vscode.window.showErrorMessage(
+      "Not a git repository. Open a git repository to use PR Builder.",
+    );
+  }
+}
+
+/**
+ * Get the first workspace folder path.
+ */
+function getWorkspaceFolder(): string | undefined {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) return undefined;
+  return folders[0]!.uri.fsPath;
 }

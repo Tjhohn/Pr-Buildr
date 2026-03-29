@@ -23,6 +23,7 @@ export {
   getDefaultBranch,
   hasRemoteBranch,
   getUnpushedCommitCount,
+  getCommitCount,
   pushBranch,
 } from "./git/operations.js";
 export { getRepoRoot, getRemoteUrl, parseGitHubRepo } from "./git/repo.js";

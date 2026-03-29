@@ -256,6 +256,25 @@ export async function getUnpushedCommitCount(
 }
 
 /**
+ * Get the number of commits between two refs.
+ * Runs: git rev-list --count <from>..<to>
+ * Returns 0 on error.
+ */
+export async function getCommitCount(
+  from: string,
+  to: string,
+  cwd?: string,
+): Promise<number> {
+  try {
+    const output = await execGit(["rev-list", "--count", `${from}..${to}`], cwd);
+    const count = parseInt(output.trim(), 10);
+    return isNaN(count) ? 0 : count;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Push a branch to a remote with upstream tracking.
  * Runs: git push -u <remote> <branch>
  */

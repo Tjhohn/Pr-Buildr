@@ -1,9 +1,147 @@
-/* PR Builder webview styles */
-/* Implementation in Phase 5 */
+/* PR Builder webview styles — theme-compatible via VS Code CSS variables */
 
 body {
-  padding: 16px;
+  padding: 20px;
   font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
   color: var(--vscode-foreground);
   background-color: var(--vscode-editor-background);
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+h2 {
+  margin: 0 0 16px 0;
+  font-size: 1.3em;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+/* Info grid — head, base, template, provider */
+.info-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  margin-bottom: 20px;
+  font-size: 0.9em;
+}
+
+.info-label {
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+}
+
+.info-value {
+  color: var(--vscode-foreground);
+}
+
+/* Form fields */
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+  font-size: 0.9em;
+  color: var(--vscode-foreground);
+}
+
+#title-field {
+  width: 100%;
+}
+
+#body-field {
+  width: 100%;
+  min-height: 300px;
+  resize: vertical;
+}
+
+/* Base branch dropdown */
+#base-dropdown {
+  min-width: 200px;
+}
+
+/* Button row */
+.button-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.button-row .spacer {
+  flex: 1;
+}
+
+/* Draft checkbox */
+.draft-checkbox {
+  display: flex;
+  align-items: center;
+}
+
+/* Status bar */
+.status-bar {
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, #333));
+  font-size: 0.85em;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-message {
+  color: var(--vscode-descriptionForeground);
+}
+
+.status-error {
+  color: var(--vscode-errorForeground);
+}
+
+.status-success {
+  color: var(--vscode-testing-iconPassed, #4caf50);
+}
+
+/* Success result */
+.success-result {
+  margin-top: 16px;
+  padding: 12px;
+  background-color: var(--vscode-editor-inactiveSelectionBackground, rgba(255,255,255,0.05));
+  border-radius: 4px;
+}
+
+.success-result a {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+}
+
+.success-result a:hover {
+  text-decoration: underline;
+}
+
+/* Stale indicator */
+.stale-warning {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  font-size: 0.85em;
+  margin-top: 4px;
+}
+
+/* Progress */
+.loading-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Utility */
+.hidden {
+  display: none !important;
+}
+
+vscode-divider {
+  margin: 16px 0;
 }
