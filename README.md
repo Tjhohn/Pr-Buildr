@@ -109,3 +109,96 @@ If none is found, a built-in default template is used.
 - anthropic
 - ollama
 - openai-compatible
+
+## VS Code Extension
+PR Builder also works as a VS Code extension with a full graphical interface.
+### Access
+Three ways to open the PR creation panel:
+- **Source Control panel** — click the `$(git-pull-request)` icon in the Source Control title bar
+- **Status bar** — click "PR Builder" in the bottom-left status bar
+- **Command Palette** — `Ctrl+Shift+P` → "PR Builder: Create Pull Request"
+### First-Time Setup
+No environment variables needed. The extension handles everything through VS Code's UI:
+1. **GitHub auth** — VS Code prompts you to sign in via GitHub OAuth on first use. Your token is stored securely by VS Code.
+2. **AI API key** — If no key is found, you'll see a notification with a "Set API Key" button. This opens a masked input box. The key is stored in your OS keychain via VS Code's SecretStorage (encrypted, never in plain text files).
+You can also set keys anytime via the command palette:
+- `PR Builder: Set OpenAI API Key`
+- `PR Builder: Set Anthropic API Key`
+- `PR Builder: Set OpenAI-Compatible API Key`
+### Settings
+Open VS Code Settings (`Ctrl+,`) and search "PR Builder":
+| Setting | Default | Description |
+|---|---|---|
+| `pr-buildr.defaultProvider` | `openai` | AI provider (`openai`, `anthropic`, `ollama`, `openai-compatible`) |
+| `pr-buildr.defaultModel` | *(provider default)* | AI model override |
+| `pr-buildr.ollamaBaseUrl` | `http://127.0.0.1:11434` | Ollama server URL |
+| `pr-buildr.openaiCompatibleBaseUrl` | *(empty)* | OpenAI-compatible server URL |
+### Commands
+All available via `Ctrl+Shift+P`:
+| Command | Description |
+|---|---|
+| PR Builder: Create Pull Request | Open the PR creation panel |
+| PR Builder: Set Base Branch | Pick a base branch for the current branch |
+| PR Builder: Show Base Branch | Display the resolved base branch |
+| PR Builder: Clear Base Branch | Remove the saved base branch |
+| PR Builder: Regenerate Draft | Re-run AI generation on the active panel |
+| PR Builder: Set OpenAI API Key | Store your OpenAI key securely |
+| PR Builder: Set Anthropic API Key | Store your Anthropic key securely |
+| PR Builder: Set OpenAI-Compatible API Key | Store a custom API key securely |
+### Development / Testing
+To test the extension locally:
+1. Open the project in VS Code
+2. Press `F5` to launch the Extension Development Host
+3. In the new window, open a git repository
+4. Use any of the access methods above to open the PR panel
+/agents      
+Switch agent
+/compact     
+Compact session
+/connect     
+Connect provider
+/copy        
+Copy session transcript
+/editor      
+Open editor
+/exit        
+Exit the app
+/export      
+Export session transcript
+/fork        
+Fork from message
+/help        
+Help
+/init        
+create/update AGENTS.md
+/mcps        
+Toggle MCPs
+/models      
+Switch model
+/new         
+New session
+/rename      
+Rename session
+/review      
+review changes [commit|branch|pr], defaults to uncommitted
+/sessions    
+Switch session
+/share       
+Share session
+/skills      
+Skills
+/status      
+View status
+/themes      
+Switch theme
+/thinking    
+Hide thinking
+/timeline    
+Jump to message
+/timestamps  
+Show timestamps
+/undo        
+Undo previous message
+Plan 
+Claude Opus 4.6
+Anthropic

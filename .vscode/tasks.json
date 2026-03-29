@@ -8,7 +8,7 @@
       "group": "build",
       "problemMatcher": ["$tsc"],
       "presentation": {
-        "reveal": "silent"
+        "reveal": "always"
       }
     }
   ]

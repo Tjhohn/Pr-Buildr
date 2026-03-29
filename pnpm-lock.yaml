@@ -48,11 +48,10 @@ importers:
   packages/core: {}
 
   packages/vscode:
-    dependencies:
+    devDependencies:
       '@pr-buildr/core':
         specifier: workspace:*
         version: link:../core
-    devDependencies:
       '@types/vscode':
         specifier: ^1.85.0
         version: 1.110.0
