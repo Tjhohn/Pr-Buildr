@@ -65,9 +65,7 @@ export function createOrShow(
       enableScripts: true,
       retainContextWhenHidden: true,
       localResourceRoots: [
-        vscode.Uri.joinPath(context.extensionUri, "src", "webview", "html"),
         vscode.Uri.joinPath(context.extensionUri, "dist", "webview"),
-        vscode.Uri.joinPath(context.extensionUri, "node_modules", "@vscode", "webview-ui-toolkit", "dist"),
       ],
     },
   );
@@ -564,7 +562,7 @@ function getHtmlContent(
 ): string {
   // Resolve URIs for webview resources
   const toolkitUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, "node_modules", "@vscode", "webview-ui-toolkit", "dist", "toolkit.js"),
+    vscode.Uri.joinPath(extensionUri, "dist", "webview", "toolkit.js"),
   );
 
   // Try dist/webview first (built), fall back to src/webview/html (development)
