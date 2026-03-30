@@ -1,8 +1,6 @@
-# PR Builder
+# PR Buildr
 
 AI-powered pull request builder for VS Code. Generates PR titles and descriptions from your git diff, commit history, and repo PR template using OpenAI, Anthropic, or Ollama.
-
-<!-- TODO: add screenshot of webview panel -->
 
 ## Features
 
@@ -13,17 +11,18 @@ AI-powered pull request builder for VS Code. Generates PR titles and description
 - **Secure API key storage** — keys stored in your OS keychain via VS Code's SecretStorage, never in plain text
 - **GitHub OAuth** — automatic sign-in via VS Code's built-in GitHub authentication
 - **Push detection** — prompts to push unpushed branches before creating a PR
+- **Jira integration** — auto-detect ticket from branch name, prepend to PR title, add link in body
 - **Stacked PR support** — save base branch per feature branch for stacked workflows
 - **PR template support** — uses your repo's PR template or a built-in default
 
 ## Getting Started
 
-### 1. Open the PR Builder
+### 1. Open PR Buildr
 
 Three ways to access it:
 
 - **Source Control panel** — click the git-pull-request icon in the title bar
-- **Status bar** — click "PR Builder" in the bottom-left
+- **Status bar** — click "PR Buildr" in the bottom-left
 - **Command Palette** — `Ctrl+Shift+P` → "PR Builder: Create Pull Request"
 
 ### 2. GitHub Authentication
@@ -59,7 +58,7 @@ Environment variables (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) are also supported
 
 ## Settings
 
-Open VS Code Settings (`Ctrl+,`) and search "PR Builder":
+Open VS Code Settings (`Ctrl+,`) and search "PR Buildr":
 
 | Setting | Default | Description |
 |---|---|---|
@@ -67,6 +66,8 @@ Open VS Code Settings (`Ctrl+,`) and search "PR Builder":
 | `pr-buildr.defaultModel` | *(provider default)* | AI model override (e.g., `gpt-4o`, `claude-sonnet-4-20250514`) |
 | `pr-buildr.ollamaBaseUrl` | `http://127.0.0.1:11434` | Ollama server URL |
 | `pr-buildr.openaiCompatibleBaseUrl` | *(empty)* | OpenAI-compatible server URL |
+| `pr-buildr.jiraProjectUrl` | *(empty)* | Jira project base URL (e.g., `https://company.atlassian.net`) |
+| `pr-buildr.jiraProjectKey` | *(empty)* | Jira project key (e.g., `AA`, `PRD`, `DATATEAM`) |
 
 ## PR Template
 
@@ -80,6 +81,27 @@ The extension looks for your repo's PR template in this order:
 
 If none is found, a built-in default template is used.
 
+## Jira Integration
+
+PR Buildr includes a lightweight Jira integration — no Jira API or authentication required.
+
+### How it works
+
+1. Configure your Jira project URL and key (in VS Code settings or `.pr-builder.json`)
+2. When creating a PR, the extension detects ticket IDs from your branch name (e.g., `AA-1234-fix-login` → `AA-1234`)
+3. The ticket is prepended to the PR title: `AA-1234: <AI title>`
+4. A link to the Jira ticket is included in the PR body
+
+### Setup in VS Code
+
+- If Jira is configured, a **Jira Ticket** text field appears in the webview panel, auto-filled from your branch name. You can edit or clear it.
+- If Jira is not configured, a collapsible **Integrations** section appears. Click it to expand, then click **Configure** next to Jira to enter your project URL and key.
+- You can also set the values directly in VS Code Settings (`Ctrl+,`) under `pr-buildr.jiraProjectUrl` and `pr-buildr.jiraProjectKey`.
+
+### Disabling Jira
+
+Set `jira.enabled: false` in `.pr-builder.json` to hide all Jira UI and skip ticket detection entirely.
+
 ## Base Branch / Stacked PRs
 
 For stacked PR workflows, save a base branch per feature branch:
@@ -90,7 +112,7 @@ For stacked PR workflows, save a base branch per feature branch:
 
 ## Also Available as a CLI
 
-PR Builder also has a command-line interface. See the [project repository](https://github.com/Tjhohn/Pr-Buildr) for CLI installation and usage.
+PR Buildr also has a command-line interface. See the [project repository](https://github.com/Tjhohn/Pr-Buildr) for CLI installation and usage.
 
 ## License
 

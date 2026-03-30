@@ -1,5 +1,5 @@
 // @ts-nocheck
-// PR Builder webview client-side script
+// PR Buildr webview client-side script
 // Handles UI interactions and communicates with the extension host via postMessage.
 
 (function () {

@@ -1,6 +1,6 @@
 {
   "name": "pr-buildr-vscode",
-  "displayName": "PR Builder",
+  "displayName": "PR Buildr",
   "description": "AI-powered pull request builder for VS Code — generate PR titles and descriptions from git diffs using OpenAI, Anthropic, or Ollama",
   "version": "0.1.0",
   "publisher": "tjhohn",
@@ -66,7 +66,7 @@
       ]
     },
     "configuration": {
-      "title": "PR Builder",
+      "title": "PR Buildr",
       "properties": {
         "pr-buildr.defaultProvider": {
           "type": "string",

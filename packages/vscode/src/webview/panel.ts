@@ -46,7 +46,7 @@ interface PanelState {
 let panelState: PanelState | undefined;
 
 /**
- * Create or reveal the PR Builder webview panel.
+ * Create or reveal the PR Buildr webview panel.
  */
 export function createOrShow(
   context: vscode.ExtensionContext,
@@ -59,7 +59,7 @@ export function createOrShow(
 
   const panel = vscode.window.createWebviewPanel(
     "pr-buildr.createPR",
-    "PR Builder",
+    "PR Buildr",
     vscode.ViewColumn.One,
     {
       enableScripts: true,
@@ -584,7 +584,7 @@ function getHtmlContent(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; font-src ${webview.cspSource};">
   <link rel="stylesheet" href="${styleUri}">
-  <title>PR Builder</title>
+  <title>PR Buildr</title>
 </head>
 <body>
   <h2>Create Pull Request</h2>
