@@ -15,7 +15,7 @@ import {
 export async function showBaseCommand(): Promise<void> {
   const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!folder) {
-    vscode.window.showErrorMessage("Open a folder to use PR Builder.");
+    vscode.window.showErrorMessage("Open a folder to use PR Buildr.");
     return;
   }
 
@@ -40,6 +40,6 @@ export async function showBaseCommand(): Promise<void> {
     );
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    vscode.window.showErrorMessage(`PR Builder: ${msg}`);
+    vscode.window.showErrorMessage(`PR Buildr: ${msg}`);
   }
 }

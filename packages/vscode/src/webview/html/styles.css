@@ -1,4 +1,4 @@
-/* PR Builder webview styles — theme-compatible via VS Code CSS variables */
+/* PR Buildr webview styles — theme-compatible via VS Code CSS variables */
 
 body {
   padding: 20px;
@@ -135,6 +135,51 @@ h2 {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Jira ticket field */
+#jira-field {
+  width: 200px;
+}
+
+/* Integrations section (collapsed dropdown) */
+.integrations-section {
+  margin-bottom: 16px;
+}
+
+.integrations-header {
+  cursor: pointer;
+  font-size: 0.9em;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  user-select: none;
+  padding: 6px 0;
+}
+
+.integrations-header:hover {
+  color: var(--vscode-foreground);
+}
+
+.integrations-chevron {
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 0.75em;
+}
+
+.integrations-body {
+  padding: 8px 0 8px 20px;
+}
+
+.integration-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 0.9em;
+}
+
+.integration-item.jira-disabled span {
+  color: var(--vscode-disabledForeground, var(--vscode-descriptionForeground));
 }
 
 /* Utility */

@@ -18,13 +18,29 @@ import {
   editDraft,
   hasRemoteBranch,
   getUnpushedCommitCount,
+  getCommitCount,
   pushBranch,
+  writeConfigFile,
+  readConfigFile,
+  inferTicketFromBranch,
+  buildJiraUrl,
+  formatTitleWithTicket,
+  ensureJiraLinkInBody,
 } from "@pr-buildr/core";
-import type { DraftState } from "@pr-buildr/core";
+import type { DraftState, PrBuildrConfig, JiraTicket } from "@pr-buildr/core";
 import { readFile } from "node:fs/promises";
 import * as display from "../display.js";
 import { openInEditor } from "../editor.js";
-import { promptCreateAction, promptPushRequired, promptPushOptional } from "../prompts.js";
+import {
+  promptCreateAction,
+  promptPushRequired,
+  promptPushOptional,
+  promptJiraUrl,
+  promptJiraKey,
+  promptSaveJiraConfig,
+  promptJiraTicketConfirm,
+  promptJiraNoUrlAction,
+} from "../prompts.js";
 
 interface CreateOptions {
   base?: string;
@@ -36,6 +52,7 @@ interface CreateOptions {
   bodyFile?: string;
   ai?: boolean; // Commander stores --no-ai as ai=false
   template?: string;
+  jira?: string;
 }
 
 /**
@@ -55,6 +72,7 @@ export const createCommand = new Command("create")
   .option("--body-file <path>", "Read PR body from file (skip AI generation)")
   .option("--no-ai", "Skip AI generation entirely")
   .option("--template <path>", "Path to PR template file")
+  .option("--jira <ticket>", "Jira ticket ID (e.g., AA-1234)")
   .action(async (options: CreateOptions) => {
     try {
       await runCreate(options);
@@ -92,19 +110,31 @@ async function runCreate(options: CreateOptions): Promise<void> {
   display.info("Base", baseBranch);
 
   // 4. Check if branch needs to be pushed to remote
-  await ensureBranchPushed(currentBranch, options.yes ?? false);
+  await ensureBranchPushed(currentBranch, baseBranch, options.yes ?? false);
 
-  // 5. Resolve template
+  // 5. Resolve Jira ticket
+  const jiraTicket = await resolveJiraTicket(
+    currentBranch,
+    repoRoot,
+    effectiveConfig,
+    options.jira,
+    options.yes ?? false,
+  );
+  if (jiraTicket) {
+    display.info("Jira", jiraTicket.url ?? jiraTicket.id);
+  }
+
+  // 6. Resolve template
   const template = await resolveTemplate(repoRoot, options.template);
   display.info("Template", template.source === "builtin" ? "Built-in default" : `Repo (${template.path})`);
 
-  // 6. Check if AI is skipped (--no-ai or --body-file)
+  // 7. Check if AI is skipped (--no-ai or --body-file)
   if (options.ai === false || options.bodyFile) {
-    await createWithoutAI(options, owner, repo, currentBranch, baseBranch, template.content);
+    await createWithoutAI(options, owner, repo, currentBranch, baseBranch, template.content, jiraTicket);
     return;
   }
 
-  // 7. Gather context for AI
+  // 8. Gather context for AI
   const spinner = ora("Gathering git context...").start();
 
   const [diff, commits, files] = await Promise.all([
@@ -126,7 +156,7 @@ async function runCreate(options: CreateOptions): Promise<void> {
   display.info("Files changed", String(files.length));
   display.info("Commits", String(commits.length));
 
-  // 7. Generate draft via AI
+  // 9. Generate draft via AI
   const aiProvider = createAIProvider(effectiveConfig);
 
   let generated: { title: string; body: string };
@@ -138,6 +168,7 @@ async function runCreate(options: CreateOptions): Promise<void> {
       diff,
       fileSummary: files,
       commitSummary: commits,
+      jiraTicket: jiraTicket ? { id: jiraTicket.id, url: jiraTicket.url } : undefined,
     });
     spinner.succeed("Draft generated.");
   } catch (err: unknown) {
@@ -148,6 +179,14 @@ async function runCreate(options: CreateOptions): Promise<void> {
   // Apply title override if provided
   if (options.title) {
     generated.title = options.title;
+  }
+
+  // Apply Jira ticket to title and body
+  if (jiraTicket) {
+    generated.title = formatTitleWithTicket(generated.title, jiraTicket.id);
+    if (jiraTicket.url) {
+      generated.body = ensureJiraLinkInBody(generated.body, jiraTicket.url);
+    }
   }
 
   // 8. Review and edit loop
@@ -279,6 +318,125 @@ async function ensureBranchPushed(branch: string, autoConfirm: boolean): Promise
 }
 
 /**
+ * Resolve Jira ticket for the PR.
+ *
+ * Returns a JiraTicket if one should be included, or undefined to skip.
+ * Handles all prompt flows: explicit flag, inference, URL setup, disable.
+ */
+async function resolveJiraTicket(
+  currentBranch: string,
+  repoRoot: string,
+  config: PrBuildrConfig,
+  explicitTicket?: string,
+  autoConfirm?: boolean,
+): Promise<JiraTicket | undefined> {
+  const jiraConfig = config.jira;
+
+  // If Jira is explicitly disabled, skip completely
+  if (jiraConfig?.enabled === false) {
+    return undefined;
+  }
+
+  const hasUrl = Boolean(jiraConfig?.projectUrl);
+  const hasKey = Boolean(jiraConfig?.projectKey);
+  const isConfigured = hasUrl && hasKey;
+
+  // 1. Explicit --jira flag
+  if (explicitTicket) {
+    if (isConfigured) {
+      const url = buildJiraUrl(jiraConfig!.projectUrl!, explicitTicket);
+      return { id: explicitTicket, url };
+    }
+    // No URL/key configured — ask for them
+    const url = await promptAndSaveJiraConfig(repoRoot, explicitTicket);
+    if (url) {
+      return { id: explicitTicket, url };
+    }
+    // User skipped URL — just use ticket ID in title, no link
+    return { id: explicitTicket };
+  }
+
+  // 2. No explicit flag — try inference if configured
+  if (isConfigured) {
+    const inferred = inferTicketFromBranch(currentBranch, jiraConfig!.projectKey!);
+    if (inferred) {
+      if (autoConfirm) {
+        const url = buildJiraUrl(jiraConfig!.projectUrl!, inferred);
+        return { id: inferred, url };
+      }
+      const include = await promptJiraTicketConfirm(inferred);
+      if (include) {
+        const url = buildJiraUrl(jiraConfig!.projectUrl!, inferred);
+        return { id: inferred, url };
+      }
+    }
+    return undefined;
+  }
+
+  // 3. Not configured but has a project key — try inference with just the key
+  if (hasKey && !hasUrl) {
+    const inferred = inferTicketFromBranch(currentBranch, jiraConfig!.projectKey!);
+    if (inferred) {
+      const action = await promptJiraNoUrlAction(inferred);
+      if (action === "enter-url") {
+        const url = await promptAndSaveJiraConfig(repoRoot, inferred);
+        if (url) {
+          return { id: inferred, url };
+        }
+        return { id: inferred };
+      }
+      if (action === "disable") {
+        await disableJira(repoRoot);
+        return undefined;
+      }
+      // "skip"
+      return undefined;
+    }
+  }
+
+  // 4. Not configured at all — skip silently (no prompts)
+  return undefined;
+}
+
+/**
+ * Prompt for Jira project URL and key, optionally save to config.
+ * Returns the full browse URL for the ticket, or undefined if skipped.
+ */
+async function promptAndSaveJiraConfig(
+  repoRoot: string,
+  ticketId: string,
+): Promise<string | undefined> {
+  const url = await promptJiraUrl();
+  if (!url.trim()) return undefined;
+
+  const key = await promptJiraKey();
+  if (!key.trim()) return undefined;
+
+  const save = await promptSaveJiraConfig();
+  if (save) {
+    const existing = await readConfigFile(repoRoot);
+    existing.jira = existing.jira ?? {};
+    existing.jira.projectUrl = url.trim();
+    existing.jira.projectKey = key.trim();
+    await writeConfigFile(repoRoot, existing);
+    display.success("Jira config saved to .pr-builder.json");
+  }
+
+  return buildJiraUrl(url.trim(), ticketId);
+}
+
+/**
+ * Disable Jira integration by writing jira.enabled: false to config.
+ */
+async function disableJira(repoRoot: string): Promise<void> {
+  const existing = await readConfigFile(repoRoot);
+  existing.jira = existing.jira ?? {};
+  existing.jira.enabled = false;
+  await writeConfigFile(repoRoot, existing);
+  display.success("Jira integration disabled. Run 'pr-buildr config init' to re-enable.");
+}
+
+/**
  * Create a PR without AI generation (--no-ai or --body-file).
  */
 async function createWithoutAI(
@@ -288,6 +446,7 @@ async function createWithoutAI(
   head: string,
   base: string,
   templateContent: string,
+  jiraTicket?: JiraTicket,
 ): Promise<void> {
   let title = options.title ?? "";
   let body = "";
@@ -309,6 +468,14 @@ async function createWithoutAI(
   if (!title.trim()) {
     display.error("PR title cannot be empty.");
     process.exit(1);
+  }
+
+  // Apply Jira ticket to title and body
+  if (jiraTicket) {
+    title = formatTitleWithTicket(title, jiraTicket.id);
+    if (jiraTicket.url) {
+      body = ensureJiraLinkInBody(body, jiraTicket.url);
+    }
   }
 
   const isDraft = options.draft ?? false;

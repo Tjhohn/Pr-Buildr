@@ -1,5 +1,5 @@
 // @ts-nocheck
-// PR Builder webview client-side script
+// PR Buildr webview client-side script
 // Handles UI interactions and communicates with the extension host via postMessage.
 
 (function () {
@@ -16,6 +16,8 @@
     isGenerating: false,
     isCreating: false,
     isCreated: false,
+    jiraTicketId: "",
+    jiraConfigured: false,
   };
 
   // DOM elements (resolved after DOMContentLoaded)
@@ -30,6 +32,14 @@
   let progressRing;
   let successResult;
   let staleWarning;
+  let jiraSection;
+  let jiraField;
+  let integrationsSection;
+  let integrationsToggle;
+  let integrationsChevron;
+  let integrationsBody;
+  let jiraConfigureBtn;
+  let ignoreIntegrationsBtn;
 
   // Initialize DOM references
   function initElements() {
@@ -44,6 +54,14 @@
     progressRing = document.getElementById("progress-ring");
     successResult = document.getElementById("success-result");
     staleWarning = document.getElementById("stale-warning");
+    jiraSection = document.getElementById("jira-section");
+    jiraField = document.getElementById("jira-field");
+    integrationsSection = document.getElementById("integrations-section");
+    integrationsToggle = document.getElementById("integrations-toggle");
+    integrationsChevron = document.getElementById("integrations-chevron");
+    integrationsBody = document.getElementById("integrations-body");
+    jiraConfigureBtn = document.getElementById("jira-configure-btn");
+    ignoreIntegrationsBtn = document.getElementById("ignore-integrations-btn");
 
     // Event listeners
     if (baseDropdown) {
@@ -63,6 +81,39 @@
     if (bodyField) {
       bodyField.addEventListener("input", () => {
         state.body = bodyField.value;
+      });
+    }
+    if (jiraField) {
+      jiraField.addEventListener("input", () => {
+        state.jiraTicketId = jiraField.value;
+      });
+    }
+
+    // Integrations toggle
+    if (integrationsToggle) {
+      integrationsToggle.addEventListener("click", () => {
+        if (integrationsBody) {
+          const isHidden = integrationsBody.classList.contains("hidden");
+          integrationsBody.classList.toggle("hidden");
+          if (integrationsChevron) {
+            integrationsChevron.textContent = isHidden ? "\u25BC" : "\u25B6";
+          }
+        }
+      });
+    }
+
+    // Configure Jira button
+    if (jiraConfigureBtn) {
+      jiraConfigureBtn.addEventListener("click", () => {
+        vscode.postMessage({ type: "configureJira" });
+      });
+    }
+
+    // Ignore integrations button
+    if (ignoreIntegrationsBtn) {
+      ignoreIntegrationsBtn.addEventListener("click", () => {
+        if (integrationsSection) integrationsSection.classList.add("hidden");
+        vscode.postMessage({ type: "ignoreIntegrations" });
       });
     }
   }
@@ -119,6 +170,29 @@
 
     const providerValue = document.getElementById("provider-value");
     if (providerValue) providerValue.textContent = `${data.provider} / ${data.model}`;
+
+    // Jira UI setup
+    const jiraConfigured = data.jiraEnabled && data.jiraProjectUrl && data.jiraProjectKey;
+    state.jiraConfigured = Boolean(jiraConfigured);
+
+    if (jiraConfigured) {
+      // Show Jira field directly, hide integrations dropdown
+      if (jiraSection) jiraSection.classList.remove("hidden");
+      if (integrationsSection) integrationsSection.classList.add("hidden");
+      if (jiraField) {
+        jiraField.value = data.jiraTicketId || "";
+        jiraField.disabled = false;
+        state.jiraTicketId = data.jiraTicketId || "";
+      }
+    } else if (data.jiraEnabled) {
+      // Show integrations dropdown (collapsed, with grayed Jira option)
+      if (jiraSection) jiraSection.classList.add("hidden");
+      if (integrationsSection) integrationsSection.classList.remove("hidden");
+    } else {
+      // Jira disabled — hide everything
+      if (jiraSection) jiraSection.classList.add("hidden");
+      if (integrationsSection) integrationsSection.classList.add("hidden");
+    }
 
     // Show generating state
     setGenerating(true);
@@ -193,6 +267,7 @@
         body: bodyField ? bodyField.value : "",
         base: state.base,
         draft: draftCheckbox ? draftCheckbox.checked : false,
+        jiraTicketId: state.jiraTicketId || undefined,
       },
     });
   }

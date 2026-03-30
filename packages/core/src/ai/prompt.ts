@@ -37,7 +37,7 @@ export function buildPrompt(
   const fileSummaryText = formatFileSummary(input);
   const commitSummaryText = formatCommitSummary(input);
 
-  const user = [
+  const sections = [
     `## PR Template`,
     "```",
     input.template,
@@ -47,6 +47,20 @@ export function buildPrompt(
     `Base: ${input.baseBranch}`,
     `Head: ${input.headBranch}`,
     "",
+  ];
+
+  // Include Jira ticket info if present
+  if (input.jiraTicket) {
+    sections.push(`## Jira Ticket`);
+    sections.push(`Ticket: ${input.jiraTicket.id}`);
+    if (input.jiraTicket.url) {
+      sections.push(`Link: ${input.jiraTicket.url}`);
+      sections.push(`Include the Jira ticket link in the PR body.`);
+    }
+    sections.push("");
+  }
+
+  sections.push(
     `## Changed Files (${input.fileSummary.length} files)`,
     fileSummaryText,
     "",
@@ -57,7 +71,9 @@ export function buildPrompt(
     "```diff",
     truncatedDiff || "(no diff available)",
     "```",
-  ].join("\n");
+  );
+
+  const user = sections.join("\n");
 
   return { system: SYSTEM_PROMPT, user };
 }

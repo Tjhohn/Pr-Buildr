@@ -16,8 +16,12 @@ import {
   getUnpushedCommitCount,
   getCommitCount,
   pushBranch,
+  inferTicketFromBranch,
+  buildJiraUrl,
+  formatTitleWithTicket,
+  ensureJiraLinkInBody,
 } from "@pr-buildr/core";
-import type { PrBuildrConfig } from "@pr-buildr/core";
+import type { PrBuildrConfig, JiraTicket } from "@pr-buildr/core";
 import type { FromWebviewMessage, ToWebviewMessage } from "./messages.js";
 import { getVSCodeGitHubToken, getAIApiKey, getProviderEnvVar } from "../auth.js";
 import { getVSCodeConfig } from "../config.js";
@@ -36,12 +40,13 @@ interface PanelState {
   base: string;
   config: PrBuildrConfig;
   githubToken: string;
+  jiraTicket?: JiraTicket;
 }
 
 let panelState: PanelState | undefined;
 
 /**
- * Create or reveal the PR Builder webview panel.
+ * Create or reveal the PR Buildr webview panel.
  */
 export function createOrShow(
   context: vscode.ExtensionContext,
@@ -54,7 +59,7 @@ export function createOrShow(
 
   const panel = vscode.window.createWebviewPanel(
     "pr-buildr.createPR",
-    "PR Builder",
+    "PR Buildr",
     vscode.ViewColumn.One,
     {
       enableScripts: true,
@@ -150,6 +155,13 @@ async function initializePanel(
     },
   };
 
+  // Apply Jira config from VS Code settings
+  if (vsConfig.jiraProjectUrl || vsConfig.jiraProjectKey) {
+    config.jira = config.jira ?? {};
+    if (vsConfig.jiraProjectUrl) config.jira.projectUrl = vsConfig.jiraProjectUrl;
+    if (vsConfig.jiraProjectKey) config.jira.projectKey = vsConfig.jiraProjectKey;
+  }
+
   // 3. Resolve base branch
   const base = await resolveBaseBranch(head, config);
 
@@ -160,7 +172,17 @@ async function initializePanel(
   const provider = config.ai?.provider ?? "openai";
   const model = config.ai?.model ?? "default";
 
-  // 5. Send init to webview
+  // 5. Resolve Jira ticket
+  const jiraEnabled = config.jira?.enabled !== false;
+  const jiraProjectUrl = config.jira?.projectUrl;
+  const jiraProjectKey = config.jira?.projectKey;
+  let jiraTicketId: string | undefined;
+
+  if (jiraEnabled && jiraProjectKey) {
+    jiraTicketId = inferTicketFromBranch(head, jiraProjectKey) ?? undefined;
+  }
+
+  // 6. Send init to webview
   sendMessage({
     type: "init",
     data: {
@@ -170,6 +192,10 @@ async function initializePanel(
       templateSource: template.source === "builtin" ? "Built-in default" : `Repo`,
       provider,
       model,
+      jiraEnabled,
+      jiraProjectUrl,
+      jiraProjectKey,
+      jiraTicketId,
     },
   });
 
@@ -234,10 +260,20 @@ async function initializePanel(
     }
   }
 
-  // Store state for message handler
-  panelState = { context, repoRoot, owner, repo, head, base, config, githubToken };
+  // Store state for message handler (including Jira ticket if resolved)
+  let initialJiraTicket: JiraTicket | undefined;
+  if (jiraEnabled && jiraTicketId && jiraProjectUrl) {
+    initialJiraTicket = { id: jiraTicketId, url: buildJiraUrl(jiraProjectUrl, jiraTicketId) };
+  } else if (jiraEnabled && jiraTicketId) {
+    initialJiraTicket = { id: jiraTicketId };
+  }
 
-  // 9. Generate draft
+  panelState = {
+    context, repoRoot, owner, repo, head, base, config, githubToken,
+    jiraTicket: initialJiraTicket,
+  };
+
+  // 10. Generate draft
   await generateDraft();
 }
 
@@ -268,6 +304,10 @@ async function generateDraft(): Promise<void> {
 
   const template = await resolveTemplate(repoRoot);
   const aiProvider = createAIProvider(config);
+
+  // Build Jira ticket for AI context if we have one stored in panel state
+  const jiraTicket = panelState.jiraTicket;
+
   const result = await aiProvider.generateDraft({
     template: template.content,
     baseBranch: base,
@@ -275,9 +315,20 @@ async function generateDraft(): Promise<void> {
     diff,
     fileSummary: files,
     commitSummary: commits,
+    jiraTicket: jiraTicket ? { id: jiraTicket.id, url: jiraTicket.url } : undefined,
   });
 
-  sendMessage({ type: "draft", data: { title: result.title, body: result.body } });
+  // Apply Jira ticket to title and body after AI generation
+  let title = result.title;
+  let body = result.body;
+  if (jiraTicket) {
+    title = formatTitleWithTicket(title, jiraTicket.id);
+    if (jiraTicket.url) {
+      body = ensureJiraLinkInBody(body, jiraTicket.url);
+    }
+  }
+
+  sendMessage({ type: "draft", data: { title, body } });
 }
 
 // ── Webview message handler ──
@@ -294,10 +345,68 @@ async function handleWebviewMessage(message: FromWebviewMessage): Promise<void> 
       case "regenerate":
         await generateDraft();
         break;
+      case "configureJira":
+        await handleConfigureJira();
+        break;
+      case "ignoreIntegrations":
+        // Nothing to persist for now — the webview handles hiding the section
+        break;
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     sendMessage({ type: "status", data: { message: msg, isError: true } });
+  }
+}
+
+async function handleConfigureJira(): Promise<void> {
+  const url = await vscode.window.showInputBox({
+    prompt: "Jira project URL (e.g., https://company.atlassian.net)",
+    placeHolder: "https://company.atlassian.net",
+    ignoreFocusOut: true,
+  });
+  if (!url?.trim()) return;
+
+  const key = await vscode.window.showInputBox({
+    prompt: "Jira project key (e.g., AA, PRD, DATATEAM)",
+    placeHolder: "AA",
+    ignoreFocusOut: true,
+  });
+  if (!key?.trim()) return;
+
+  // Save to VS Code settings
+  const config = vscode.workspace.getConfiguration("pr-buildr");
+  await config.update("jiraProjectUrl", url.trim(), vscode.ConfigurationTarget.Global);
+  await config.update("jiraProjectKey", key.trim(), vscode.ConfigurationTarget.Global);
+
+  vscode.window.showInformationMessage(`Jira configured: ${key.trim()} at ${url.trim()}`);
+
+  // Update panel state config and re-send init with Jira info
+  if (panelState) {
+    panelState.config.jira = panelState.config.jira ?? {};
+    panelState.config.jira.projectUrl = url.trim();
+    panelState.config.jira.projectKey = key.trim();
+
+    const head = panelState.head;
+    const jiraTicketId = inferTicketFromBranch(head, key.trim()) ?? undefined;
+
+    // Re-send init to update the webview with Jira state
+    const branches = await getBranches(panelState.repoRoot);
+    const template = await resolveTemplate(panelState.repoRoot);
+    sendMessage({
+      type: "init",
+      data: {
+        branches,
+        base: panelState.base,
+        head,
+        templateSource: template.source === "builtin" ? "Built-in default" : "Repo",
+        provider: panelState.config.ai?.provider ?? "openai",
+        model: panelState.config.ai?.model ?? "default",
+        jiraEnabled: true,
+        jiraProjectUrl: url.trim(),
+        jiraProjectKey: key.trim(),
+        jiraTicketId,
+      },
+    });
   }
 }
 
@@ -306,6 +415,7 @@ async function handleCreate(data: {
   body: string;
   base: string;
   draft: boolean;
+  jiraTicketId?: string;
 }): Promise<void> {
   if (!panelState) return;
 
@@ -474,7 +584,7 @@ function getHtmlContent(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; font-src ${webview.cspSource};">
   <link rel="stylesheet" href="${styleUri}">
-  <title>PR Builder</title>
+  <title>PR Buildr</title>
 </head>
 <body>
   <h2>Create Pull Request</h2>
@@ -495,6 +605,29 @@ function getHtmlContent(
 
     <span class="info-label">Provider:</span>
     <span class="info-value" id="provider-value">...</span>
+  </div>
+
+  <!-- Jira ticket field (shown when configured) -->
+  <div id="jira-section" class="form-group hidden">
+    <label class="form-label" for="jira-field">Jira Ticket</label>
+    <vscode-text-field id="jira-field" placeholder="e.g., AA-1234" disabled></vscode-text-field>
+  </div>
+
+  <!-- Integrations section (shown when Jira NOT configured) -->
+  <div id="integrations-section" class="integrations-section hidden">
+    <div class="integrations-header" id="integrations-toggle">
+      <span class="integrations-chevron" id="integrations-chevron">&#9654;</span>
+      Integrations
+    </div>
+    <div id="integrations-body" class="integrations-body hidden">
+      <div class="integration-item jira-disabled" id="jira-configure-btn">
+        <span>Jira: Not configured</span>
+        <vscode-link id="jira-configure-link">Configure</vscode-link>
+      </div>
+      <div class="integration-item" id="ignore-integrations-btn">
+        <vscode-link>Ignore integrations</vscode-link>
+      </div>
+    </div>
   </div>
 
   <vscode-divider></vscode-divider>

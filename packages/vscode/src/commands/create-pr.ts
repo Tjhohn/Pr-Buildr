@@ -5,7 +5,7 @@ import { createOrShow } from "../webview/panel.js";
 /**
  * Command: PR Builder: Create Pull Request
  *
- * Detects the workspace git repo and opens the PR Builder webview panel.
+ * Detects the workspace git repo and opens the PR Buildr webview panel.
  */
 export async function createPRCommand(
   context: vscode.ExtensionContext,
@@ -13,7 +13,7 @@ export async function createPRCommand(
   const folder = getWorkspaceFolder();
   if (!folder) {
     vscode.window.showErrorMessage(
-      "Open a folder to use PR Builder.",
+      "Open a folder to use PR Buildr.",
     );
     return;
   }
@@ -23,7 +23,7 @@ export async function createPRCommand(
     createOrShow(context, repoRoot);
   } catch {
     vscode.window.showErrorMessage(
-      "Not a git repository. Open a git repository to use PR Builder.",
+      "Not a git repository. Open a git repository to use PR Buildr.",
     );
   }
 }

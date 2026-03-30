@@ -9,6 +9,8 @@ export function getVSCodeConfig(): {
   model?: string;
   ollamaBaseUrl?: string;
   openaiCompatibleBaseUrl?: string;
+  jiraProjectUrl?: string;
+  jiraProjectKey?: string;
 } {
   const config = vscode.workspace.getConfiguration("pr-buildr");
 
@@ -16,11 +18,15 @@ export function getVSCodeConfig(): {
   const model = config.get<string>("defaultModel");
   const ollamaBaseUrl = config.get<string>("ollamaBaseUrl");
   const openaiCompatibleBaseUrl = config.get<string>("openaiCompatibleBaseUrl");
+  const jiraProjectUrl = config.get<string>("jiraProjectUrl");
+  const jiraProjectKey = config.get<string>("jiraProjectKey");
 
   return {
     ...(provider ? { provider } : {}),
     ...(model ? { model } : {}),
     ...(ollamaBaseUrl ? { ollamaBaseUrl } : {}),
     ...(openaiCompatibleBaseUrl ? { openaiCompatibleBaseUrl } : {}),
+    ...(jiraProjectUrl ? { jiraProjectUrl } : {}),
+    ...(jiraProjectKey ? { jiraProjectKey } : {}),
   };
 }

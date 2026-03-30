@@ -11,6 +11,7 @@ export type {
   GitHubConfig,
   ProviderConfig,
   ValidProvider,
+  JiraConfig,
 } from "./config/schema.js";
 
 // Git
@@ -55,3 +56,12 @@ export type { DraftState } from "./draft/types.js";
 export { createPullRequest } from "./github/api.js";
 export { getGitHubToken } from "./github/auth.js";
 export type { CreatePRParams, PRResult } from "./github/types.js";
+
+// Jira
+export {
+  inferTicketFromBranch,
+  buildJiraUrl,
+  formatTitleWithTicket,
+  ensureJiraLinkInBody,
+} from "./jira/parser.js";
+export type { JiraTicket } from "./jira/types.js";

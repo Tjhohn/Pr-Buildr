@@ -49,10 +49,20 @@ export interface GitHubConfig {
   draftByDefault?: boolean;
 }
 
+export interface JiraConfig {
+  /** Set to false to completely disable Jira prompts and inference */
+  enabled?: boolean;
+  /** Jira instance base URL, e.g., "https://company.atlassian.net" */
+  projectUrl?: string;
+  /** Jira project key, e.g., "AA", "PRD", "DATATEAM" */
+  projectKey?: string;
+}
+
 export interface PrBuildrConfig {
   defaultBase?: string;
   github?: GitHubConfig;
   ai?: AIConfig;
   providers?: ProviderConfig;
   branchBases?: Record<string, string>;
+  jira?: JiraConfig;
 }
