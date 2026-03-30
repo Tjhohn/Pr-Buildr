@@ -88,6 +88,16 @@
           "type": "string",
           "default": "",
           "description": "Base URL for OpenAI-compatible API server"
+        },
+        "pr-buildr.jiraProjectUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Jira project base URL (e.g., https://company.atlassian.net)"
+        },
+        "pr-buildr.jiraProjectKey": {
+          "type": "string",
+          "default": "",
+          "description": "Jira project key (e.g., AA, PRD, DATATEAM)"
         }
       }
     }

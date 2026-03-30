@@ -41,6 +41,18 @@ function applyEnvOverrides(config: PrBuildrConfig): void {
   if (defaultBase) {
     config.defaultBase = defaultBase;
   }
+
+  const jiraUrl = process.env["PR_BUILDR_JIRA_URL"];
+  if (jiraUrl) {
+    config.jira = config.jira ?? {};
+    config.jira.projectUrl = jiraUrl;
+  }
+
+  const jiraKey = process.env["PR_BUILDR_JIRA_KEY"];
+  if (jiraKey) {
+    config.jira = config.jira ?? {};
+    config.jira.projectKey = jiraKey;
+  }
 }
 
 /**

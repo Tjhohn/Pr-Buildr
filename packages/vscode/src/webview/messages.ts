@@ -13,6 +13,10 @@ export type ToWebviewMessage =
         templateSource: string;
         provider: string;
         model: string;
+        jiraEnabled: boolean;
+        jiraProjectUrl?: string;
+        jiraProjectKey?: string;
+        jiraTicketId?: string;
       };
     }
   | {
@@ -56,6 +60,7 @@ export type FromWebviewMessage =
         body: string;
         base: string;
         draft: boolean;
+        jiraTicketId?: string;
       };
     }
   | {
@@ -66,4 +71,10 @@ export type FromWebviewMessage =
     }
   | {
       type: "regenerate";
+    }
+  | {
+      type: "configureJira";
+    }
+  | {
+      type: "ignoreIntegrations";
     };

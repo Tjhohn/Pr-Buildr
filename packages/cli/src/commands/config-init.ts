@@ -71,6 +71,27 @@ async function runConfigInit(): Promise<void> {
 
   const draftByDefault = await promptConfirm("Create draft PRs by default?");
 
+  // Jira integration
+  const jiraUrl = await promptInput(
+    "Jira project URL (or press Enter to skip):",
+    "",
+  );
+
+  let jiraKey = "";
+  let jiraEnabled: boolean | undefined;
+
+  if (jiraUrl.trim()) {
+    jiraKey = await promptInput(
+      "Jira project key (e.g., AA, PRD, DATATEAM):",
+      "",
+    );
+  } else {
+    const disableJira = await promptConfirm("Disable Jira ticket detection?");
+    if (disableJira) {
+      jiraEnabled = false;
+    }
+  }
+
   // Build config
   const config: PrBuildrConfig = {
     defaultBase,
@@ -81,6 +102,15 @@ async function runConfigInit(): Promise<void> {
     github: {
       draftByDefault,
     },
+    ...(jiraUrl.trim() || jiraKey.trim() || jiraEnabled === false
+      ? {
+          jira: {
+            ...(jiraEnabled === false ? { enabled: false } : {}),
+            ...(jiraUrl.trim() ? { projectUrl: jiraUrl.trim() } : {}),
+            ...(jiraKey.trim() ? { projectKey: jiraKey.trim() } : {}),
+          },
+        }
+      : {}),
   };
 
   await writeConfigFile(repoRoot, config);

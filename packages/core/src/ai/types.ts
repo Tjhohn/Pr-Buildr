@@ -12,6 +12,10 @@ export interface DraftInput {
   diff: string;
   fileSummary: FileSummary[];
   commitSummary: Commit[];
+  jiraTicket?: {
+    id: string;
+    url?: string;
+  };
 }
 
 export interface DraftOutput {

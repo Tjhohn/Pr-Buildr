@@ -74,6 +74,60 @@ export async function promptSelectProvider(): Promise<string> {
 }
 
 /**
+ * Prompt for Jira project URL.
+ */
+export async function promptJiraUrl(): Promise<string> {
+  return input({
+    message: "Jira project URL (e.g., https://company.atlassian.net):",
+  });
+}
+
+/**
+ * Prompt for Jira project key.
+ */
+export async function promptJiraKey(): Promise<string> {
+  return input({
+    message: "Jira project key (e.g., AA, PRD, DATATEAM):",
+  });
+}
+
+/**
+ * Prompt whether to save Jira config to .pr-builder.json.
+ */
+export async function promptSaveJiraConfig(): Promise<boolean> {
+  return confirm({
+    message: "Save Jira config to .pr-builder.json so we don't ask again?",
+    default: true,
+  });
+}
+
+/**
+ * Prompt to confirm including an inferred Jira ticket.
+ */
+export async function promptJiraTicketConfirm(ticketId: string): Promise<boolean> {
+  return confirm({
+    message: `Jira ticket detected: ${ticketId}. Include in PR?`,
+    default: true,
+  });
+}
+
+/**
+ * Prompt when a Jira ticket is detected but no project URL is configured.
+ */
+export async function promptJiraNoUrlAction(
+  ticketId: string,
+): Promise<"enter-url" | "skip" | "disable"> {
+  return select({
+    message: `Jira ticket detected: ${ticketId}. Jira project URL is not configured.`,
+    choices: [
+      { name: "Enter Jira project URL to include link in PR", value: "enter-url" as const },
+      { name: "Skip for this PR", value: "skip" as const },
+      { name: "Disable Jira integration (don't ask again)", value: "disable" as const },
+    ],
+  });
+}
+
+/**
  * Prompt when the branch has not been pushed to the remote at all.
  * A push is required to create a PR — the only options are push or cancel.
  */
