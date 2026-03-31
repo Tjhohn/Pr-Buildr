@@ -61,7 +61,7 @@ pr-buildr needs a GitHub token to create pull requests. A **fine-grained persona
 2. **Token name**: `pr-buildr` (or whatever you like)
 3. **Expiration**: Choose a duration you're comfortable with
 4. **Repository access**: Select **"Only select repositories"** → choose your repo
-5. **Permissions** — set these three:
+5. **Permissions** - set these three:
 
 | Permission | Access | Why |
 |---|---|---|
