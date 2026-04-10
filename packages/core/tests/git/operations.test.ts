@@ -226,55 +226,154 @@ describe("getCurrentBranch", () => {
   });
 });
 
+/**
+ * Helper to mock execFile based on specific git arguments.
+ * Takes a map of ref patterns to whether they should succeed (exist) or fail (not exist).
+ * Also handles "git branch" calls by returning branchListOutput.
+ */
+function mockGitByArgs(opts: {
+  branchListOutput?: string;
+  existingRefs?: string[];
+  remoteShowOutput?: string;
+}) {
+  const { branchListOutput = "", existingRefs = [], remoteShowOutput } = opts;
+  mockExecFile.mockImplementation((_cmd, args, _opts, callback) => {
+    if (typeof callback === "function") {
+      const argsArr = args as string[];
+
+      // git branch --format=...
+      if (argsArr.includes("--format=%(refname:short)")) {
+        callback(null, branchListOutput, "");
+        return {} as ChildProcess;
+      }
+
+      // git show-ref --verify --quiet <ref>
+      if (argsArr.includes("show-ref") && argsArr.includes("--verify")) {
+        const ref = argsArr[argsArr.length - 1]!;
+        if (existingRefs.includes(ref)) {
+          callback(null, "", "");
+        } else {
+          const error = new Error("not found") as NodeJS.ErrnoException;
+          error.code = "1";
+          callback(error, "", "");
+        }
+        return {} as ChildProcess;
+      }
+
+      // git remote show origin
+      if (argsArr.includes("remote") && argsArr.includes("show")) {
+        if (remoteShowOutput) {
+          callback(null, remoteShowOutput, "");
+        } else {
+          const error = new Error("not available") as NodeJS.ErrnoException;
+          error.code = "1";
+          callback(error, "", "");
+        }
+        return {} as ChildProcess;
+      }
+
+      callback(null, "", "");
+    }
+    return {} as ChildProcess;
+  });
+}
+
 describe("getBranches", () => {
-  it("returns sorted list of local branches", async () => {
-    mockGitOutput("main\nfeature/b\nfeature/a\ndevelop");
+  it("prioritizes origin/main and origin/master at the top, then local main/master, then rest alphabetically", async () => {
+    mockGitByArgs({
+      branchListOutput: "main\nfeature/b\nfeature/a\ndevelop\nmaster",
+      existingRefs: ["refs/remotes/origin/main", "refs/remotes/origin/master"],
+    });
     const branches = await getBranches();
-    expect(branches).toEqual(["develop", "feature/a", "feature/b", "main"]);
+    expect(branches).toEqual([
+      "origin/main",
+      "origin/master",
+      "main",
+      "master",
+      "develop",
+      "feature/a",
+      "feature/b",
+    ]);
+  });
+
+  it("puts origin/main at top when only origin/main exists", async () => {
+    mockGitByArgs({
+      branchListOutput: "main\nfeature/b\nfeature/a\ndevelop",
+      existingRefs: ["refs/remotes/origin/main"],
+    });
+    const branches = await getBranches();
+    expect(branches).toEqual(["origin/main", "main", "develop", "feature/a", "feature/b"]);
+  });
+
+  it("puts local main/master before other branches when no origin refs exist", async () => {
+    mockGitByArgs({
+      branchListOutput: "main\nfeature/b\nfeature/a\ndevelop",
+      existingRefs: [],
+    });
+    const branches = await getBranches();
+    expect(branches).toEqual(["main", "develop", "feature/a", "feature/b"]);
+  });
+
+  it("handles master without main", async () => {
+    mockGitByArgs({
+      branchListOutput: "master\nfeature/b\nfeature/a\ndevelop",
+      existingRefs: ["refs/remotes/origin/master"],
+    });
+    const branches = await getBranches();
+    expect(branches).toEqual(["origin/master", "master", "develop", "feature/a", "feature/b"]);
   });
 
   it("returns empty array when no branches", async () => {
-    mockGitOutput("");
+    mockGitByArgs({ branchListOutput: "", existingRefs: [] });
     const branches = await getBranches();
     expect(branches).toEqual([]);
   });
 });
 
 describe("getDefaultBranch", () => {
-  it('returns "main" when main branch exists', async () => {
-    // show-ref --verify for main succeeds
-    mockGitOutput("");
+  it('returns "origin/main" when origin/main exists', async () => {
+    mockGitByArgs({ existingRefs: ["refs/remotes/origin/main"] });
+    const branch = await getDefaultBranch();
+    expect(branch).toBe("origin/main");
+  });
+
+  it('returns "origin/master" when origin/main does not exist but origin/master does', async () => {
+    mockGitByArgs({ existingRefs: ["refs/remotes/origin/master"] });
+    const branch = await getDefaultBranch();
+    expect(branch).toBe("origin/master");
+  });
+
+  it('returns local "main" when no origin refs exist but local main does', async () => {
+    mockGitByArgs({ existingRefs: ["refs/heads/main"] });
     const branch = await getDefaultBranch();
     expect(branch).toBe("main");
   });
 
-  it('returns "master" when main does not exist but master does', async () => {
-    let callCount = 0;
-    mockExecFile.mockImplementation((_cmd, args, _opts, callback) => {
-      callCount++;
-      if (typeof callback === "function") {
-        const argsArr = args as string[];
-        if (argsArr.includes("refs/heads/main")) {
-          // main doesn't exist
-          const error = new Error("not found") as NodeJS.ErrnoException;
-          error.code = "1";
-          callback(error, "", "");
-        } else if (argsArr.includes("refs/heads/master")) {
-          // master exists
-          callback(null, "", "");
-        } else {
-          callback(null, "", "");
-        }
-      }
-      return {} as ChildProcess;
-    });
-
+  it('returns local "master" when only local master exists', async () => {
+    mockGitByArgs({ existingRefs: ["refs/heads/master"] });
     const branch = await getDefaultBranch();
     expect(branch).toBe("master");
   });
 
+  it("prefers origin/main over local main", async () => {
+    mockGitByArgs({
+      existingRefs: ["refs/remotes/origin/main", "refs/heads/main"],
+    });
+    const branch = await getDefaultBranch();
+    expect(branch).toBe("origin/main");
+  });
+
+  it("falls back to git remote show origin when no refs found", async () => {
+    mockGitByArgs({
+      existingRefs: [],
+      remoteShowOutput: "  HEAD branch: develop\n",
+    });
+    const branch = await getDefaultBranch();
+    expect(branch).toBe("develop");
+  });
+
   it("throws when no default branch found", async () => {
-    mockGitError("not found");
+    mockGitByArgs({ existingRefs: [] });
     await expect(getDefaultBranch()).rejects.toThrow("Could not determine the default branch");
   });
 });

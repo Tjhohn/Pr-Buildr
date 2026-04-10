@@ -158,45 +158,88 @@ export async function getCurrentBranch(cwd?: string): Promise<string> {
 }
 
 /**
- * Get all local branch names, sorted alphabetically.
+ * Get branch names with prioritized ordering.
+ *
+ * Returns branches in this order:
+ * 1. origin/main (if exists)
+ * 2. origin/master (if exists)
+ * 3. main (if exists locally)
+ * 4. master (if exists locally)
+ * 5. All other local branches, sorted alphabetically
  */
 export async function getBranches(cwd?: string): Promise<string[]> {
   const output = await execGit(["branch", "--format=%(refname:short)"], cwd);
-  if (!output.trim()) {
-    return [];
-  }
-  return output
-    .split("\n")
-    .map((b) => b.trim())
-    .filter(Boolean)
-    .sort();
+  const localBranches = output.trim()
+    ? output
+        .split("\n")
+        .map((b) => b.trim())
+        .filter(Boolean)
+    : [];
+
+  // Check for remote tracking branches of main/master
+  const hasOriginMain = await refExists("refs/remotes/origin/main", cwd);
+  const hasOriginMaster = await refExists("refs/remotes/origin/master", cwd);
+
+  // Separate prioritized branches from the rest
+  const prioritized: string[] = [];
+  if (hasOriginMain) prioritized.push("origin/main");
+  if (hasOriginMaster) prioritized.push("origin/master");
+
+  const hasLocalMain = localBranches.includes("main");
+  const hasLocalMaster = localBranches.includes("master");
+  if (hasLocalMain) prioritized.push("main");
+  if (hasLocalMaster) prioritized.push("master");
+
+  // Remaining branches sorted alphabetically, excluding already-listed ones
+  const prioritizedSet = new Set(prioritized);
+  const rest = localBranches.filter((b) => !prioritizedSet.has(b)).sort();
+
+  return [...prioritized, ...rest];
 }
 
 /**
- * Detect the default branch (main or master).
+ * Check if a git ref exists (e.g. refs/remotes/origin/main).
+ */
+async function refExists(ref: string, cwd?: string): Promise<boolean> {
+  try {
+    await execGit(["show-ref", "--verify", "--quiet", ref], cwd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detect the default branch.
  *
  * Checks in order:
- * 1. Local "main" branch exists
- * 2. Local "master" branch exists
- * 3. Remote default branch via `git remote show origin`
+ * 1. Remote tracking "origin/main" exists
+ * 2. Remote tracking "origin/master" exists
+ * 3. Local "main" branch exists
+ * 4. Local "master" branch exists
+ * 5. Remote default branch via `git remote show origin`
  *
  * Throws if no default branch can be determined.
  */
 export async function getDefaultBranch(cwd?: string): Promise<string> {
+  // Check if "origin/main" exists as a remote tracking branch
+  if (await refExists("refs/remotes/origin/main", cwd)) {
+    return "origin/main";
+  }
+
+  // Check if "origin/master" exists as a remote tracking branch
+  if (await refExists("refs/remotes/origin/master", cwd)) {
+    return "origin/master";
+  }
+
   // Check if "main" exists locally
-  try {
-    await execGit(["show-ref", "--verify", "--quiet", "refs/heads/main"], cwd);
+  if (await refExists("refs/heads/main", cwd)) {
     return "main";
-  } catch {
-    // main doesn't exist
   }
 
   // Check if "master" exists locally
-  try {
-    await execGit(["show-ref", "--verify", "--quiet", "refs/heads/master"], cwd);
+  if (await refExists("refs/heads/master", cwd)) {
     return "master";
-  } catch {
-    // master doesn't exist
   }
 
   // Try to detect from remote
@@ -212,7 +255,7 @@ export async function getDefaultBranch(cwd?: string): Promise<string> {
 
   throw new Error(
     "Could not determine the default branch. " +
-      "No 'main' or 'master' branch found locally, and could not detect from remote. " +
+      "No 'main' or 'master' branch found locally or on origin, and could not detect from remote. " +
       "Use --base <branch> to specify explicitly.",
   );
 }
@@ -244,10 +287,7 @@ export async function getUnpushedCommitCount(
   cwd?: string,
 ): Promise<number> {
   try {
-    const output = await execGit(
-      ["rev-list", "--count", `${remote}/${branch}..HEAD`],
-      cwd,
-    );
+    const output = await execGit(["rev-list", "--count", `${remote}/${branch}..HEAD`], cwd);
     const count = parseInt(output.trim(), 10);
     return isNaN(count) ? 0 : count;
   } catch {
@@ -260,11 +300,7 @@ export async function getUnpushedCommitCount(
  * Runs: git rev-list --count <from>..<to>
  * Returns 0 on error.
  */
-export async function getCommitCount(
-  from: string,
-  to: string,
-  cwd?: string,
-): Promise<number> {
+export async function getCommitCount(from: string, to: string, cwd?: string): Promise<number> {
   try {
     const output = await execGit(["rev-list", "--count", `${from}..${to}`], cwd);
     const count = parseInt(output.trim(), 10);
@@ -278,10 +314,6 @@ export async function getCommitCount(
  * Push a branch to a remote with upstream tracking.
  * Runs: git push -u <remote> <branch>
  */
-export async function pushBranch(
-  branch: string,
-  remote = "origin",
-  cwd?: string,
-): Promise<void> {
+export async function pushBranch(branch: string, remote = "origin", cwd?: string): Promise<void> {
   await execGit(["push", "-u", remote, branch], cwd);
 }
