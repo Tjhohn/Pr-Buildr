@@ -5,12 +5,15 @@
  * cookie databases. Supports Chrome, Brave, Edge, and Chromium on
  * macOS, Linux, and Windows.
  *
+ * Automatically discovers all browser profiles (Default, Profile 1,
+ * Profile 2, etc.) and checks each for a GitHub session cookie.
+ *
  * The cookie is needed for GitHub's internal image upload endpoint,
  * which requires browser-session authentication (not API tokens).
  */
 
 import { execFile } from "node:child_process";
-import { existsSync, copyFileSync, unlinkSync, readFileSync } from "node:fs";
+import { existsSync, copyFileSync, unlinkSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, tmpdir, platform } from "node:os";
 import { createDecipheriv, pbkdf2Sync } from "node:crypto";
@@ -19,18 +22,26 @@ import { createDecipheriv, pbkdf2Sync } from "node:crypto";
 
 interface BrowserDef {
   name: string;
-  /** Paths relative to the platform config dir */
-  cookiePaths: {
-    linux?: string;
-    darwin?: string;
-    win32?: string;
+  /**
+   * Browser data directories relative to the platform base dir.
+   * Multiple paths are checked in order (e.g., standard install, Flatpak, Snap).
+   * Profile subdirectories (Default, Profile 1, etc.) live inside these.
+   *
+   * Linux base: $HOME
+   * macOS base: $HOME
+   * Windows base: %LOCALAPPDATA%
+   */
+  dataDirs: {
+    linux?: string[];
+    darwin?: string[];
+    win32?: string[];
   };
   /** Safe storage service name for Keychain/Keyring */
   safeStorageName: {
     darwin?: string;
     linux?: string;
   };
-  /** Path to Local State file (Windows AES-GCM key) */
+  /** Path to Local State file (Windows AES-GCM key), relative to platform base */
   localStatePaths?: {
     win32?: string;
   };
@@ -39,10 +50,14 @@ interface BrowserDef {
 const BROWSERS: BrowserDef[] = [
   {
     name: "Chrome",
-    cookiePaths: {
-      linux: ".config/google-chrome/Default/Cookies",
-      darwin: "Library/Application Support/Google/Chrome/Default/Cookies",
-      win32: "Google/Chrome/User Data/Default/Network/Cookies",
+    dataDirs: {
+      linux: [
+        ".config/google-chrome",
+        ".var/app/com.google.Chrome/config/google-chrome", // Flatpak
+        "snap/google-chrome/current/.config/google-chrome", // Snap
+      ],
+      darwin: ["Library/Application Support/Google/Chrome"],
+      win32: ["Google/Chrome/User Data"],
     },
     safeStorageName: {
       darwin: "Chrome Safe Storage",
@@ -54,10 +69,13 @@ const BROWSERS: BrowserDef[] = [
   },
   {
     name: "Brave",
-    cookiePaths: {
-      linux: ".config/BraveSoftware/Brave-Browser/Default/Cookies",
-      darwin: "Library/Application Support/BraveSoftware/Brave-Browser/Default/Cookies",
-      win32: "BraveSoftware/Brave-Browser/User Data/Default/Network/Cookies",
+    dataDirs: {
+      linux: [
+        ".config/BraveSoftware/Brave-Browser",
+        ".var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser", // Flatpak
+      ],
+      darwin: ["Library/Application Support/BraveSoftware/Brave-Browser"],
+      win32: ["BraveSoftware/Brave-Browser/User Data"],
     },
     safeStorageName: {
       darwin: "Brave Safe Storage",
@@ -69,10 +87,13 @@ const BROWSERS: BrowserDef[] = [
   },
   {
     name: "Edge",
-    cookiePaths: {
-      linux: ".config/microsoft-edge/Default/Cookies",
-      darwin: "Library/Application Support/Microsoft Edge/Default/Cookies",
-      win32: "Microsoft/Edge/User Data/Default/Network/Cookies",
+    dataDirs: {
+      linux: [
+        ".config/microsoft-edge",
+        ".var/app/com.microsoft.Edge/config/microsoft-edge", // Flatpak
+      ],
+      darwin: ["Library/Application Support/Microsoft Edge"],
+      win32: ["Microsoft/Edge/User Data"],
     },
     safeStorageName: {
       darwin: "Microsoft Edge Safe Storage",
@@ -84,10 +105,14 @@ const BROWSERS: BrowserDef[] = [
   },
   {
     name: "Chromium",
-    cookiePaths: {
-      linux: ".config/chromium/Default/Cookies",
-      darwin: "Library/Application Support/Chromium/Default/Cookies",
-      win32: "Chromium/User Data/Default/Network/Cookies",
+    dataDirs: {
+      linux: [
+        ".config/chromium",
+        ".var/app/org.chromium.Chromium/config/chromium", // Flatpak
+        "snap/chromium/current/.config/chromium", // Snap
+      ],
+      darwin: ["Library/Application Support/Chromium"],
+      win32: ["Chromium/User Data"],
     },
     safeStorageName: {
       darwin: "Chromium Safe Storage",
@@ -99,11 +124,21 @@ const BROWSERS: BrowserDef[] = [
   },
 ];
 
+/**
+ * Profile directory names that Chrome-family browsers use.
+ * "Default" is the unnamed default profile.
+ * "Profile N" directories are created for additional named profiles.
+ */
+const PROFILE_DIR_RE = /^(Default|Profile \d+)$/;
+
 // ── Public API ──
 
 /**
  * Extract the GitHub `user_session` cookie from the first available
  * Chrome-family browser on the system.
+ *
+ * Discovers all browser profiles (Default, Profile 1, Profile 2, etc.)
+ * and checks each for a valid GitHub session cookie.
  *
  * Throws descriptive errors on failure:
  * - No browser found
@@ -115,15 +150,17 @@ export async function getGitHubSessionCookie(): Promise<string> {
   const home = homedir();
 
   for (const browser of BROWSERS) {
-    const cookiePath = resolveCookiePath(browser, os, home);
-    if (!cookiePath || !existsSync(cookiePath)) continue;
+    const cookiePaths = findCookieDbPaths(browser, os, home);
+    if (cookiePaths.length === 0) continue;
 
-    try {
-      const cookie = await extractCookie(cookiePath, browser, os);
-      if (cookie) return cookie;
-    } catch {
-      // Try next browser
-      continue;
+    for (const cookiePath of cookiePaths) {
+      try {
+        const cookie = await extractCookie(cookiePath, browser, os);
+        if (cookie) return cookie;
+      } catch {
+        // Try next profile / browser
+        continue;
+      }
     }
   }
 
@@ -134,19 +171,89 @@ export async function getGitHubSessionCookie(): Promise<string> {
   );
 }
 
-// ── Internal helpers ──
+// ── Profile discovery ──
 
-function resolveCookiePath(browser: BrowserDef, os: string, home: string): string | null {
-  const relPath = browser.cookiePaths[os as keyof typeof browser.cookiePaths];
-  if (!relPath) return null;
+/**
+ * Find all cookie database files for a given browser across all profiles
+ * and all data directory locations (standard, Flatpak, Snap).
+ *
+ * Chrome-family browsers store each profile in a separate subdirectory:
+ * - `Default/` — the unnamed default profile
+ * - `Profile 1/`, `Profile 2/`, etc. — additional named profiles
+ *
+ * The Cookies DB location within each profile:
+ * - Linux / macOS: `{profile}/Cookies`
+ * - Windows: `{profile}/Network/Cookies`
+ *
+ * Returns paths sorted with "Default" first (if it exists), then
+ * numbered profiles in order. Paths from data dirs that appear earlier
+ * in the browser definition are prioritized.
+ */
+function findCookieDbPaths(browser: BrowserDef, os: string, home: string): string[] {
+  const dataDirs = resolveBrowserDataDirs(browser, os, home);
+  const paths: string[] = [];
 
-  if (os === "win32") {
-    const localAppData = process.env["LOCALAPPDATA"] ?? join(home, "AppData", "Local");
-    return join(localAppData, relPath);
+  for (const dataDir of dataDirs) {
+    if (!existsSync(dataDir)) continue;
+
+    try {
+      const entries = readdirSync(dataDir);
+
+      // Sort: "Default" first, then "Profile 1", "Profile 2", etc.
+      const profileDirs = entries
+        .filter((entry) => {
+          if (!PROFILE_DIR_RE.test(entry)) return false;
+          try {
+            return statSync(join(dataDir, entry)).isDirectory();
+          } catch {
+            return false;
+          }
+        })
+        .sort((a, b) => {
+          if (a === "Default") return -1;
+          if (b === "Default") return 1;
+          const numA = parseInt(a.replace("Profile ", ""), 10);
+          const numB = parseInt(b.replace("Profile ", ""), 10);
+          return numA - numB;
+        });
+
+      for (const profileDir of profileDirs) {
+        // On Windows, Cookies is in the Network subdirectory
+        const cookieFile =
+          os === "win32"
+            ? join(dataDir, profileDir, "Network", "Cookies")
+            : join(dataDir, profileDir, "Cookies");
+
+        if (existsSync(cookieFile)) {
+          paths.push(cookieFile);
+        }
+      }
+    } catch {
+      // Can't read the data directory — skip
+    }
   }
 
-  return join(home, relPath);
+  return paths;
 }
+
+/**
+ * Resolve all candidate data directories for a browser on the current platform.
+ * Returns absolute paths (may include standard, Flatpak, and Snap locations).
+ */
+function resolveBrowserDataDirs(browser: BrowserDef, os: string, home: string): string[] {
+  const relPaths = browser.dataDirs[os as keyof typeof browser.dataDirs];
+  if (!relPaths || relPaths.length === 0) return [];
+
+  return relPaths.map((relPath) => {
+    if (os === "win32") {
+      const localAppData = process.env["LOCALAPPDATA"] ?? join(home, "AppData", "Local");
+      return join(localAppData, relPath);
+    }
+    return join(home, relPath);
+  });
+}
+
+// ── Cookie extraction ──
 
 /**
  * Extract the user_session cookie from a specific browser's cookie DB.
@@ -182,7 +289,7 @@ async function extractCookie(
       const row = db
         .prepare(
           `SELECT encrypted_value FROM cookies
-         WHERE host_key = '.github.com' AND name = 'user_session'
+         WHERE host_key IN ('.github.com', 'github.com') AND name = 'user_session'
          ORDER BY expires_utc DESC LIMIT 1`,
         )
         .get() as { encrypted_value: Buffer } | undefined;
@@ -205,6 +312,8 @@ async function extractCookie(
     }
   }
 }
+
+// ── Decryption ──
 
 /**
  * Decrypt a Chrome encrypted cookie value.
