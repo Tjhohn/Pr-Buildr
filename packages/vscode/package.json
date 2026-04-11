@@ -7,8 +7,12 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
-  "activationEvents": ["onStartupFinished"],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "icon": "icon.png",
   "pricing": "Free",
@@ -114,7 +118,8 @@
   "devDependencies": {
     "@pr-buildr/core": "workspace:*",
     "@types/vscode": "^1.85.0",
-    "@vscode/webview-ui-toolkit": "^1.4.0"
+    "@vscode/webview-ui-toolkit": "^1.4.0",
+    "marked": "^18.0.0"
   },
   "keywords": [
     "pull-request",

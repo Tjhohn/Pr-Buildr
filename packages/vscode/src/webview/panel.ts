@@ -20,12 +20,19 @@ import {
   buildJiraUrl,
   formatTitleWithTicket,
   ensureJiraLinkInBody,
+  uploadImages,
+  getGitHubSessionCookie,
+  insertImagesIntoBody,
+  getImageContentType,
+  validateImage,
 } from "@pr-buildr/core";
-import type { PrBuildrConfig, JiraTicket } from "@pr-buildr/core";
+import type { PrBuildrConfig, JiraTicket, ImageAttachment } from "@pr-buildr/core";
 import type { FromWebviewMessage, ToWebviewMessage } from "./messages.js";
 import { getVSCodeGitHubToken, getAIApiKey, getProviderEnvVar } from "../auth.js";
 import { getVSCodeConfig } from "../config.js";
 import { randomBytes } from "node:crypto";
+import { readFile, stat } from "node:fs/promises";
+import { basename } from "node:path";
 
 // ── Singleton panel state ──
 
@@ -41,6 +48,9 @@ interface PanelState {
   config: PrBuildrConfig;
   githubToken: string;
   jiraTicket?: JiraTicket;
+  images: ImageAttachment[];
+  nextImageId: number;
+  hasDraft: boolean;
 }
 
 let panelState: PanelState | undefined;
@@ -48,10 +58,7 @@ let panelState: PanelState | undefined;
 /**
  * Create or reveal the PR Buildr webview panel.
  */
-export function createOrShow(
-  context: vscode.ExtensionContext,
-  repoRoot: string,
-): void {
+export function createOrShow(context: vscode.ExtensionContext, repoRoot: string): void {
   if (currentPanel) {
     currentPanel.reveal(vscode.ViewColumn.One);
     return;
@@ -64,9 +71,7 @@ export function createOrShow(
     {
       enableScripts: true,
       retainContextWhenHidden: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(context.extensionUri, "dist", "webview"),
-      ],
+      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "dist", "webview")],
     },
   );
 
@@ -118,10 +123,7 @@ export function isPanelOpen(): boolean {
 
 // ── Initialization ──
 
-async function initializePanel(
-  context: vscode.ExtensionContext,
-  repoRoot: string,
-): Promise<void> {
+async function initializePanel(context: vscode.ExtensionContext, repoRoot: string): Promise<void> {
   // 1. Detect repo
   const remoteUrl = await getRemoteUrl("origin", repoRoot);
   const { owner, repo } = parseGitHubRepo(remoteUrl);
@@ -267,8 +269,18 @@ async function initializePanel(
   }
 
   panelState = {
-    context, repoRoot, owner, repo, head, base, config, githubToken,
+    context,
+    repoRoot,
+    owner,
+    repo,
+    head,
+    base,
+    config,
+    githubToken,
     jiraTicket: initialJiraTicket,
+    images: [],
+    nextImageId: 1,
+    hasDraft: false,
   };
 
   // 10. Generate draft
@@ -306,6 +318,16 @@ async function generateDraft(): Promise<void> {
   // Build Jira ticket for AI context if we have one stored in panel state
   const jiraTicket = panelState.jiraTicket;
 
+  // Build images metadata for AI context
+  const imagesForAI =
+    panelState.images.length > 0
+      ? panelState.images.map((img, i) => ({
+          index: i + 1,
+          fileName: img.fileName,
+          altText: img.altText,
+        }))
+      : undefined;
+
   const result = await aiProvider.generateDraft({
     template: template.content,
     baseBranch: base,
@@ -314,6 +336,7 @@ async function generateDraft(): Promise<void> {
     fileSummary: files,
     commitSummary: commits,
     jiraTicket: jiraTicket ? { id: jiraTicket.id, url: jiraTicket.url } : undefined,
+    images: imagesForAI,
   });
 
   // Apply Jira ticket to title and body after AI generation
@@ -326,6 +349,7 @@ async function generateDraft(): Promise<void> {
     }
   }
 
+  panelState.hasDraft = true;
   sendMessage({ type: "draft", data: { title, body } });
 }
 
@@ -349,12 +373,93 @@ async function handleWebviewMessage(message: FromWebviewMessage): Promise<void> 
       case "ignoreIntegrations":
         // Nothing to persist for now — the webview handles hiding the section
         break;
+      case "addImage":
+        await handleAddImage();
+        break;
+      case "removeImage":
+        handleRemoveImage(message.data.id);
+        break;
+      case "updateImageAlt":
+        handleUpdateImageAlt(message.data.id, message.data.altText);
+        break;
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     sendMessage({ type: "status", data: { message: msg, isError: true } });
   }
 }
+
+// ── Image handlers ──
+
+async function handleAddImage(): Promise<void> {
+  if (!panelState) return;
+
+  const uris = await vscode.window.showOpenDialog({
+    canSelectMany: true,
+    canSelectFolders: false,
+    filters: {
+      Images: ["png", "jpg", "jpeg", "gif", "webp", "svg"],
+    },
+    title: "Select images to attach to the PR",
+  });
+
+  if (!uris || uris.length === 0) return;
+
+  for (const uri of uris) {
+    const filePath = uri.fsPath;
+    const fileName = basename(filePath);
+
+    try {
+      const fileStat = await stat(filePath);
+      validateImage(fileName, fileStat.size);
+
+      const contentType = getImageContentType(fileName);
+      if (!contentType) continue;
+
+      // Read file and create base64 data URL for preview
+      const fileBuffer = await readFile(filePath);
+      const base64 = fileBuffer.toString("base64");
+      const previewDataUrl = `data:${contentType};base64,${base64}`;
+
+      const id = String(panelState.nextImageId++);
+      const altText = fileName.replace(/\.[^.]+$/, ""); // filename without extension
+
+      const attachment: ImageAttachment = {
+        id,
+        fileName,
+        localPath: filePath,
+        altText,
+        contentType,
+        size: fileStat.size,
+        previewDataUrl,
+      };
+
+      panelState.images.push(attachment);
+
+      sendMessage({
+        type: "imageAdded",
+        data: { id, fileName, altText, previewDataUrl },
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showWarningMessage(`Could not add image "${fileName}": ${msg}`);
+    }
+  }
+}
+
+function handleRemoveImage(id: string): void {
+  if (!panelState) return;
+  panelState.images = panelState.images.filter((img) => img.id !== id);
+  sendMessage({ type: "imageRemoved", data: { id } });
+}
+
+function handleUpdateImageAlt(id: string, altText: string): void {
+  if (!panelState) return;
+  const img = panelState.images.find((i) => i.id === id);
+  if (img) img.altText = altText;
+}
+
+// ── Jira handler ──
 
 async function handleConfigureJira(): Promise<void> {
   const url = await vscode.window.showInputBox({
@@ -408,6 +513,8 @@ async function handleConfigureJira(): Promise<void> {
   }
 }
 
+// ── PR creation ──
+
 async function handleCreate(data: {
   title: string;
   body: string;
@@ -417,13 +524,98 @@ async function handleCreate(data: {
 }): Promise<void> {
   if (!panelState) return;
 
+  let finalBody = data.body;
+
+  // Upload images if any are attached
+  if (panelState.images.length > 0) {
+    sendMessage({ type: "status", data: { message: "Uploading images..." } });
+
+    try {
+      // Get browser session cookie
+      let sessionCookie: string;
+      try {
+        sessionCookie = await getGitHubSessionCookie();
+      } catch (cookieErr: unknown) {
+        const cookieMsg = cookieErr instanceof Error ? cookieErr.message : String(cookieErr);
+
+        const action = await vscode.window.showWarningMessage(
+          `Could not read browser session for image upload: ${cookieMsg}`,
+          "Create without images",
+          "Cancel",
+        );
+
+        if (action === "Cancel" || !action) {
+          sendMessage({
+            type: "status",
+            data: { message: "PR creation cancelled.", isError: true },
+          });
+          return;
+        }
+
+        // Create without images — skip upload, leave placeholders
+        sendMessage({ type: "creating" });
+        const result = await createPullRequest({
+          owner: panelState.owner,
+          repo: panelState.repo,
+          title: data.title,
+          body: data.body,
+          head: panelState.head,
+          base: data.base,
+          draft: data.draft,
+          token: panelState.githubToken,
+        });
+        sendMessage({
+          type: "created",
+          data: { url: result.htmlUrl, number: result.number, draft: result.draft },
+        });
+        return;
+      }
+
+      // Upload images
+      const uploadResults = await uploadImages(panelState.images, {
+        owner: panelState.owner,
+        repo: panelState.repo,
+        token: panelState.githubToken,
+        sessionCookie,
+        onProgress: (current, total) => {
+          sendMessage({
+            type: "uploadingImages",
+            data: { current, total },
+          });
+        },
+      });
+
+      // Replace placeholders with real URLs
+      finalBody = insertImagesIntoBody(data.body, uploadResults);
+    } catch (uploadErr: unknown) {
+      const uploadMsg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+
+      const action = await vscode.window.showWarningMessage(
+        `Image upload failed: ${uploadMsg}`,
+        "Create without images",
+        "Cancel",
+      );
+
+      if (action === "Cancel" || !action) {
+        sendMessage({
+          type: "status",
+          data: { message: "PR creation cancelled.", isError: true },
+        });
+        return;
+      }
+
+      // Create without images
+      finalBody = data.body;
+    }
+  }
+
   sendMessage({ type: "creating" });
 
   const result = await createPullRequest({
     owner: panelState.owner,
     repo: panelState.repo,
     title: data.title,
-    body: data.body,
+    body: finalBody,
     head: panelState.head,
     base: data.base,
     draft: data.draft,
@@ -556,10 +748,7 @@ function getNonce(): string {
 
 // ── HTML generation ──
 
-function getHtmlContent(
-  webview: vscode.Webview,
-  extensionUri: vscode.Uri,
-): string {
+function getHtmlContent(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   // Resolve URIs for webview resources
   const toolkitUri = webview.asWebviewUri(
     vscode.Uri.joinPath(extensionUri, "dist", "webview", "toolkit.js"),
@@ -572,6 +761,9 @@ function getHtmlContent(
   const styleUri = webview.asWebviewUri(
     vscode.Uri.joinPath(extensionUri, "dist", "webview", "styles.css"),
   );
+  const markedUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, "dist", "webview", "marked.js"),
+  );
 
   const nonce = getNonce();
 
@@ -580,7 +772,7 @@ function getHtmlContent(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; font-src ${webview.cspSource};">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; font-src ${webview.cspSource}; img-src data: https:;">
   <link rel="stylesheet" href="${styleUri}">
   <title>PR Buildr</title>
 </head>
@@ -636,8 +828,33 @@ function getHtmlContent(
   </div>
 
   <div class="form-group">
-    <label class="form-label" for="body-field">Body</label>
+    <div class="body-header">
+      <label class="form-label" for="body-field">Body</label>
+      <div class="body-tabs">
+        <button class="body-tab active" id="edit-tab">Edit</button>
+        <button class="body-tab" id="preview-tab">Preview</button>
+      </div>
+    </div>
     <vscode-text-area id="body-field" rows="20" placeholder="PR description..." resize="vertical" disabled></vscode-text-area>
+    <div id="body-preview" class="body-preview hidden"></div>
+  </div>
+
+  <!-- Image section -->
+  <div class="form-group">
+    <label class="form-label">Images</label>
+    <div class="image-section">
+      <div class="image-grid" id="image-grid"></div>
+      <button class="add-image-btn" id="add-image-btn" title="Add image">
+        <span class="add-image-icon">+</span>
+        <span>Add Image</span>
+      </button>
+    </div>
+    <div class="image-tip hidden" id="image-tip">
+      Use {image:N} in body for inline placement. Unplaced images append to end.
+    </div>
+    <div id="image-stale-warning" class="stale-warning hidden">
+      Images added after draft generation. Click Regenerate to update placement.
+    </div>
   </div>
 
   <div id="stale-warning" class="stale-warning hidden">
@@ -663,6 +880,7 @@ function getHtmlContent(
   </div>
 
   <script type="module" nonce="${nonce}" src="${toolkitUri}"></script>
+  <script nonce="${nonce}" src="${markedUri}"></script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

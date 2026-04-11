@@ -16,6 +16,12 @@ export interface DraftInput {
     id: string;
     url?: string;
   };
+  /** Images attached by the user for the AI to place in the body. */
+  images?: Array<{
+    index: number;
+    fileName: string;
+    altText: string;
+  }>;
 }
 
 export interface DraftOutput {
