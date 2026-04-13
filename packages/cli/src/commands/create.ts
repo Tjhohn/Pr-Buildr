@@ -45,6 +45,7 @@ import {
   promptSaveJiraConfig,
   promptJiraTicketConfirm,
   promptJiraNoUrlAction,
+  promptGitHubCookie,
 } from "../prompts.js";
 
 interface CreateOptions {
@@ -631,31 +632,52 @@ async function submitPR(
 
   // Upload images if any are attached
   if (images.length > 0) {
-    const imageSpinner = ora("Uploading images...").start();
+    // Acquire session cookie: auto-extract → env var → interactive prompt
+    let sessionCookie: string | null = null;
 
     try {
-      const sessionCookie = await getGitHubSessionCookie();
-      const token = getGitHubToken();
+      sessionCookie = await getGitHubSessionCookie();
+    } catch {
+      // Auto-extraction failed — try env var
+      sessionCookie = process.env["PR_BUILDR_GITHUB_SESSION_COOKIE"]?.trim() || null;
+    }
 
-      const uploadResults = await uploadImages(images, {
-        owner,
-        repo,
-        token,
-        sessionCookie,
-        onProgress: (current, total) => {
-          imageSpinner.text = `Uploading image ${current} of ${total}...`;
-        },
-      });
-
-      finalBody = insertImagesIntoBody(state.current.body, uploadResults);
-      imageSpinner.succeed(
-        `Uploaded ${uploadResults.length} image${uploadResults.length === 1 ? "" : "s"}.`,
+    if (!sessionCookie) {
+      display.warn(
+        "Could not read GitHub session cookie from browser automatically.\n" +
+          "You can also set the PR_BUILDR_GITHUB_SESSION_COOKIE environment variable.",
       );
-    } catch (err: unknown) {
-      imageSpinner.fail("Failed to upload images.");
-      const msg = err instanceof Error ? err.message : String(err);
-      display.warn(msg);
-      display.warn("Creating PR without images. You can add them manually on GitHub.");
+      sessionCookie = await promptGitHubCookie();
+    }
+
+    if (sessionCookie) {
+      const imageSpinner = ora("Uploading images...").start();
+
+      try {
+        const token = getGitHubToken();
+
+        const uploadResults = await uploadImages(images, {
+          owner,
+          repo,
+          token,
+          sessionCookie,
+          onProgress: (current, total) => {
+            imageSpinner.text = `Uploading image ${current} of ${total}...`;
+          },
+        });
+
+        finalBody = insertImagesIntoBody(state.current.body, uploadResults);
+        imageSpinner.succeed(
+          `Uploaded ${uploadResults.length} image${uploadResults.length === 1 ? "" : "s"}.`,
+        );
+      } catch (err: unknown) {
+        imageSpinner.fail("Failed to upload images.");
+        const msg = err instanceof Error ? err.message : String(err);
+        display.warn(msg);
+        display.warn("Creating PR without images. You can add them manually on GitHub.");
+      }
+    } else {
+      display.warn("No session cookie provided. Creating PR without images.");
     }
   }
 

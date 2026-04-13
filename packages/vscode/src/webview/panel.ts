@@ -530,68 +530,13 @@ async function handleCreate(data: {
   if (panelState.images.length > 0) {
     sendMessage({ type: "status", data: { message: "Uploading images..." } });
 
-    try {
-      // Get browser session cookie
-      let sessionCookie: string;
-      try {
-        sessionCookie = await getGitHubSessionCookie();
-      } catch (cookieErr: unknown) {
-        const cookieMsg = cookieErr instanceof Error ? cookieErr.message : String(cookieErr);
+    // Acquire GitHub session cookie: auto-extract → saved → prompt user
+    const sessionCookie = await acquireSessionCookie();
 
-        const action = await vscode.window.showWarningMessage(
-          `Could not read browser session for image upload: ${cookieMsg}`,
-          "Create without images",
-          "Cancel",
-        );
-
-        if (action === "Cancel" || !action) {
-          sendMessage({
-            type: "status",
-            data: { message: "PR creation cancelled.", isError: true },
-          });
-          return;
-        }
-
-        // Create without images — skip upload, leave placeholders
-        sendMessage({ type: "creating" });
-        const result = await createPullRequest({
-          owner: panelState.owner,
-          repo: panelState.repo,
-          title: data.title,
-          body: data.body,
-          head: panelState.head,
-          base: data.base,
-          draft: data.draft,
-          token: panelState.githubToken,
-        });
-        sendMessage({
-          type: "created",
-          data: { url: result.htmlUrl, number: result.number, draft: result.draft },
-        });
-        return;
-      }
-
-      // Upload images
-      const uploadResults = await uploadImages(panelState.images, {
-        owner: panelState.owner,
-        repo: panelState.repo,
-        token: panelState.githubToken,
-        sessionCookie,
-        onProgress: (current, total) => {
-          sendMessage({
-            type: "uploadingImages",
-            data: { current, total },
-          });
-        },
-      });
-
-      // Replace placeholders with real URLs
-      finalBody = insertImagesIntoBody(data.body, uploadResults);
-    } catch (uploadErr: unknown) {
-      const uploadMsg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
-
+    if (!sessionCookie) {
+      // User chose to skip images or cancelled
       const action = await vscode.window.showWarningMessage(
-        `Image upload failed: ${uploadMsg}`,
+        "No GitHub session cookie available. Images cannot be uploaded.",
         "Create without images",
         "Cancel",
       );
@@ -604,8 +549,50 @@ async function handleCreate(data: {
         return;
       }
 
-      // Create without images
-      finalBody = data.body;
+      // Fall through — create without images (finalBody unchanged)
+    } else {
+      // Upload images with the acquired cookie
+      try {
+        const uploadResults = await uploadImages(panelState.images, {
+          owner: panelState.owner,
+          repo: panelState.repo,
+          token: panelState.githubToken,
+          sessionCookie,
+          onProgress: (current, total) => {
+            sendMessage({
+              type: "uploadingImages",
+              data: { current, total },
+            });
+          },
+        });
+
+        // Replace placeholders with real URLs
+        finalBody = insertImagesIntoBody(data.body, uploadResults);
+      } catch (uploadErr: unknown) {
+        const uploadMsg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+
+        // If auth error, clear saved cookie so we re-prompt next time
+        if (isAuthError(uploadErr)) {
+          await panelState.context.secrets.delete("pr-buildr.githubSessionCookie");
+        }
+
+        const action = await vscode.window.showWarningMessage(
+          `Image upload failed: ${uploadMsg}`,
+          "Create without images",
+          "Cancel",
+        );
+
+        if (action === "Cancel" || !action) {
+          sendMessage({
+            type: "status",
+            data: { message: "PR creation cancelled.", isError: true },
+          });
+          return;
+        }
+
+        // Create without images
+        finalBody = data.body;
+      }
     }
   }
 
@@ -626,6 +613,69 @@ async function handleCreate(data: {
     type: "created",
     data: { url: result.htmlUrl, number: result.number, draft: result.draft },
   });
+}
+
+/**
+ * Acquire a GitHub session cookie through a fallback chain:
+ * 1. Auto-extract from browser cookie database
+ * 2. Use previously saved cookie from VS Code SecretStorage
+ * 3. Prompt user to paste from Chrome DevTools
+ *
+ * Returns the cookie string, or null if the user cancelled.
+ */
+async function acquireSessionCookie(): Promise<string | null> {
+  if (!panelState) return null;
+
+  // 1. Try auto-extraction from browser
+  try {
+    const cookie = await getGitHubSessionCookie();
+    return cookie;
+  } catch {
+    // Auto-extraction failed — fall through to saved/manual
+  }
+
+  // 2. Check for previously saved cookie in SecretStorage
+  const saved = await panelState.context.secrets.get("pr-buildr.githubSessionCookie");
+  if (saved) {
+    return saved;
+  }
+
+  // 3. Prompt user to paste cookie from DevTools
+  const pasted = await vscode.window.showInputBox({
+    prompt:
+      "Could not read browser cookie automatically. " +
+      "Paste your GitHub user_session cookie to upload images.\n" +
+      "Find it in Chrome DevTools: F12 → Application tab → Cookies → github.com → user_session",
+    placeHolder: "Paste cookie value here...",
+    password: true,
+    ignoreFocusOut: true,
+  });
+
+  if (!pasted?.trim()) {
+    return null;
+  }
+
+  // Save for future use
+  await panelState.context.secrets.store("pr-buildr.githubSessionCookie", pasted.trim());
+
+  return pasted.trim();
+}
+
+/**
+ * Check if an upload error is an authentication/authorization failure,
+ * indicating the session cookie is expired or invalid.
+ */
+function isAuthError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return (
+    msg.includes("401") ||
+    msg.includes("403") ||
+    msg.includes("422") ||
+    msg.includes("session") ||
+    msg.includes("expired") ||
+    msg.includes("authentication")
+  );
 }
 
 function handleChangeBase(newBase: string): void {
