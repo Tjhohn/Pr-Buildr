@@ -60,6 +60,27 @@ export function buildPrompt(
     sections.push("");
   }
 
+  // Include attached images info if present
+  if (input.images && input.images.length > 0) {
+    sections.push(`## Attached Images`);
+    sections.push(`The user has attached the following images to include in the PR description:`);
+    for (const img of input.images) {
+      sections.push(`- Image ${img.index}: "${img.fileName}" (alt: "${img.altText}")`);
+    }
+    sections.push("");
+    sections.push(
+      `Place {image:N} references (e.g., {image:1}, {image:2}) in the body where each image should appear.`,
+    );
+    sections.push(
+      `If the template has a screenshots, images, or visual changes section, prefer placing them there.`,
+    );
+    sections.push(`You may also place images inline near the relevant change descriptions.`);
+    sections.push(
+      `Any images you don't explicitly place will be appended at the end automatically.`,
+    );
+    sections.push("");
+  }
+
   sections.push(
     `## Changed Files (${input.fileSummary.length} files)`,
     fileSummaryText,
@@ -85,9 +106,7 @@ function formatFileSummary(input: DraftInput): string {
 
   return input.fileSummary
     .map((f) => {
-      const status = f.status === "renamed" && f.oldPath
-        ? `renamed from ${f.oldPath}`
-        : f.status;
+      const status = f.status === "renamed" && f.oldPath ? `renamed from ${f.oldPath}` : f.status;
       return `- ${f.path} (+${f.additions}, -${f.deletions}) [${status}]`;
     })
     .join("\n");

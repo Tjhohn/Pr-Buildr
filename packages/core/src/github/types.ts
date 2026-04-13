@@ -1,3 +1,5 @@
+import type { ImageAttachment } from "./image-types.js";
+
 export interface CreatePRParams {
   owner: string;
   repo: string;
@@ -7,6 +9,8 @@ export interface CreatePRParams {
   base: string;
   draft?: boolean;
   token: string;
+  /** Images to upload and embed in the body before creating the PR. */
+  images?: ImageAttachment[];
 }
 
 export interface PRResult {

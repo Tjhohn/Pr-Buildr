@@ -43,6 +43,36 @@ export type ToWebviewMessage =
         number: number;
         draft: boolean;
       };
+    }
+  // ── Image messages ──
+  | {
+      type: "imageAdded";
+      data: {
+        id: string;
+        fileName: string;
+        altText: string;
+        previewDataUrl: string;
+      };
+    }
+  | {
+      type: "imageRemoved";
+      data: {
+        id: string;
+      };
+    }
+  | {
+      type: "uploadingImages";
+      data: {
+        current: number;
+        total: number;
+      };
+    }
+  | {
+      type: "imageUploadFailed";
+      data: {
+        message: string;
+        failedImages: string[];
+      };
     };
 
 /** Messages sent from the webview to the extension */
@@ -77,4 +107,21 @@ export type FromWebviewMessage =
     }
   | {
       type: "ignoreIntegrations";
+    }
+  // ── Image messages ──
+  | {
+      type: "addImage";
+    }
+  | {
+      type: "removeImage";
+      data: {
+        id: string;
+      };
+    }
+  | {
+      type: "updateImageAlt";
+      data: {
+        id: string;
+        altText: string;
+      };
     };

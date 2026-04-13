@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import type { ImageAttachment } from "@pr-buildr/core";
 
 /**
  * Display a labeled info line.
@@ -61,4 +62,20 @@ export function error(message: string): void {
  */
 export function success(message: string): void {
   console.log(chalk.green(message));
+}
+
+/**
+ * Display the list of attached images.
+ */
+export function displayImages(images: ImageAttachment[]): void {
+  if (images.length === 0) return;
+
+  console.log();
+  console.log(chalk.bold(`Images (${images.length}):`));
+  for (const img of images) {
+    const sizeMB = (img.size / 1024).toFixed(1);
+    console.log(
+      `  ${chalk.cyan(img.id + ".")} ${img.fileName} ${chalk.dim(`(alt: "${img.altText}") — ${sizeMB} KB`)}`,
+    );
+  }
 }

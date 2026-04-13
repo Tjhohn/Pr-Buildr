@@ -18,7 +18,6 @@ import {
   editDraft,
   hasRemoteBranch,
   getUnpushedCommitCount,
-  getCommitCount,
   pushBranch,
   writeConfigFile,
   readConfigFile,
@@ -26,9 +25,15 @@ import {
   buildJiraUrl,
   formatTitleWithTicket,
   ensureJiraLinkInBody,
+  uploadImages,
+  getGitHubSessionCookie,
+  insertImagesIntoBody,
+  getImageContentType,
+  validateImage,
 } from "@pr-buildr/core";
-import type { DraftState, PrBuildrConfig, JiraTicket } from "@pr-buildr/core";
-import { readFile } from "node:fs/promises";
+import type { DraftState, PrBuildrConfig, JiraTicket, ImageAttachment } from "@pr-buildr/core";
+import { readFile, stat } from "node:fs/promises";
+import { basename, resolve } from "node:path";
 import * as display from "../display.js";
 import { openInEditor } from "../editor.js";
 import {
@@ -40,6 +45,7 @@ import {
   promptSaveJiraConfig,
   promptJiraTicketConfirm,
   promptJiraNoUrlAction,
+  promptGitHubCookie,
 } from "../prompts.js";
 
 interface CreateOptions {
@@ -53,6 +59,7 @@ interface CreateOptions {
   ai?: boolean; // Commander stores --no-ai as ai=false
   template?: string;
   jira?: string;
+  image?: string[];
 }
 
 /**
@@ -73,6 +80,7 @@ export const createCommand = new Command("create")
   .option("--no-ai", "Skip AI generation entirely")
   .option("--template <path>", "Path to PR template file")
   .option("--jira <ticket>", "Jira ticket ID (e.g., AA-1234)")
+  .option("-i, --image <paths...>", "Image files to attach to the PR")
   .action(async (options: CreateOptions) => {
     try {
       await runCreate(options);
@@ -112,7 +120,13 @@ async function runCreate(options: CreateOptions): Promise<void> {
   // 4. Check if branch needs to be pushed to remote
   await ensureBranchPushed(currentBranch, baseBranch, options.yes ?? false);
 
-  // 5. Resolve Jira ticket
+  // 5. Resolve images
+  const images = await resolveImages(options.image);
+  if (images.length > 0) {
+    display.displayImages(images);
+  }
+
+  // 6. Resolve Jira ticket
   const jiraTicket = await resolveJiraTicket(
     currentBranch,
     repoRoot,
@@ -124,17 +138,29 @@ async function runCreate(options: CreateOptions): Promise<void> {
     display.info("Jira", jiraTicket.url ?? jiraTicket.id);
   }
 
-  // 6. Resolve template
+  // 7. Resolve template
   const template = await resolveTemplate(repoRoot, options.template);
-  display.info("Template", template.source === "builtin" ? "Built-in default" : `Repo (${template.path})`);
+  display.info(
+    "Template",
+    template.source === "builtin" ? "Built-in default" : `Repo (${template.path})`,
+  );
 
-  // 7. Check if AI is skipped (--no-ai or --body-file)
+  // 8. Check if AI is skipped (--no-ai or --body-file)
   if (options.ai === false || options.bodyFile) {
-    await createWithoutAI(options, owner, repo, currentBranch, baseBranch, template.content, jiraTicket);
+    await createWithoutAI(
+      options,
+      owner,
+      repo,
+      currentBranch,
+      baseBranch,
+      template.content,
+      jiraTicket,
+      images,
+    );
     return;
   }
 
-  // 8. Gather context for AI
+  // 9. Gather context for AI
   const spinner = ora("Gathering git context...").start();
 
   const [diff, commits, files] = await Promise.all([
@@ -156,8 +182,18 @@ async function runCreate(options: CreateOptions): Promise<void> {
   display.info("Files changed", String(files.length));
   display.info("Commits", String(commits.length));
 
-  // 9. Generate draft via AI
+  // 10. Generate draft via AI
   const aiProvider = createAIProvider(effectiveConfig);
+
+  // Build images metadata for AI context
+  const imagesForAI =
+    images.length > 0
+      ? images.map((img, i) => ({
+          index: i + 1,
+          fileName: img.fileName,
+          altText: img.altText,
+        }))
+      : undefined;
 
   let generated: { title: string; body: string };
   try {
@@ -169,6 +205,7 @@ async function runCreate(options: CreateOptions): Promise<void> {
       fileSummary: files,
       commitSummary: commits,
       jiraTicket: jiraTicket ? { id: jiraTicket.id, url: jiraTicket.url } : undefined,
+      images: imagesForAI,
     });
     spinner.succeed("Draft generated.");
   } catch (err: unknown) {
@@ -189,13 +226,13 @@ async function runCreate(options: CreateOptions): Promise<void> {
     }
   }
 
-  // 8. Review and edit loop
+  // 11. Review and edit loop
   let state: DraftState = createDraft(generated, baseBranch, currentBranch);
 
   if (options.yes) {
     // Skip review — create immediately
     const isDraft = options.draft ?? effectiveConfig.github?.draftByDefault ?? false;
-    await submitPR(state, owner, repo, isDraft);
+    await submitPR(state, owner, repo, isDraft, images);
     return;
   }
 
@@ -210,12 +247,12 @@ async function runCreate(options: CreateOptions): Promise<void> {
     switch (action) {
       case "create": {
         const isDraft = options.draft ?? false;
-        await submitPR(state, owner, repo, isDraft);
+        await submitPR(state, owner, repo, isDraft, images);
         return;
       }
 
       case "draft": {
-        await submitPR(state, owner, repo, true);
+        await submitPR(state, owner, repo, true, images);
         return;
       }
 
@@ -235,13 +272,83 @@ async function runCreate(options: CreateOptions): Promise<void> {
 }
 
 /**
+ * Resolve and validate --image file paths into ImageAttachment objects.
+ */
+async function resolveImages(imagePaths?: string[]): Promise<ImageAttachment[]> {
+  if (!imagePaths || imagePaths.length === 0) return [];
+
+  const images: ImageAttachment[] = [];
+  let nextId = 1;
+
+  for (const rawPath of imagePaths) {
+    // Support "path:alt text" syntax
+    let filePath: string;
+    let altText: string;
+
+    const colonIdx = rawPath.indexOf(":");
+    // Only treat as alt-text separator if the colon is not part of a drive letter (e.g., C:\)
+    if (colonIdx > 1) {
+      filePath = rawPath.slice(0, colonIdx);
+      altText = rawPath.slice(colonIdx + 1);
+    } else {
+      filePath = rawPath;
+      altText = "";
+    }
+
+    filePath = resolve(filePath);
+
+    let fileStat;
+    try {
+      fileStat = await stat(filePath);
+    } catch {
+      display.error(`Image file not found: ${filePath}`);
+      process.exit(1);
+    }
+
+    if (!fileStat.isFile()) {
+      display.error(`Not a file: ${filePath}`);
+      process.exit(1);
+    }
+
+    const fileName = basename(filePath);
+    validateImage(fileName, fileStat.size);
+
+    const contentType = getImageContentType(fileName);
+    if (!contentType) {
+      display.error(`Unsupported image type: ${fileName}`);
+      process.exit(1);
+    }
+
+    if (!altText) {
+      altText = fileName.replace(/\.[^.]+$/, ""); // filename without extension
+    }
+
+    const id = String(nextId++);
+    images.push({
+      id,
+      fileName,
+      localPath: filePath,
+      altText,
+      contentType,
+      size: fileStat.size,
+    });
+  }
+
+  return images;
+}
+
+/**
  * Ensure the current branch exists on the remote and is up to date.
  *
  * Scenario 1: Branch not on remote → must push or cancel (can't create PR without it)
  * Scenario 2: Branch on remote but has unpushed commits → push, continue, or cancel
  * Scenario 3: Branch on remote, no unpushed commits → proceed silently
  */
-async function ensureBranchPushed(branch: string, autoConfirm: boolean): Promise<void> {
+async function ensureBranchPushed(
+  branch: string,
+  _baseBranch: string,
+  autoConfirm: boolean,
+): Promise<void> {
   const remoteBranchExists = await hasRemoteBranch(branch);
 
   if (!remoteBranchExists) {
@@ -447,6 +554,7 @@ async function createWithoutAI(
   base: string,
   templateContent: string,
   jiraTicket?: JiraTicket,
+  images?: ImageAttachment[],
 ): Promise<void> {
   let title = options.title ?? "";
   let body = "";
@@ -482,7 +590,7 @@ async function createWithoutAI(
   const state = createDraft({ title, body }, base, head);
 
   if (options.yes) {
-    await submitPR(state, owner, repo, isDraft);
+    await submitPR(state, owner, repo, isDraft, images ?? []);
     return;
   }
 
@@ -492,15 +600,15 @@ async function createWithoutAI(
 
   switch (action) {
     case "create":
-      await submitPR(state, owner, repo, false);
+      await submitPR(state, owner, repo, false, images ?? []);
       break;
     case "draft":
-      await submitPR(state, owner, repo, true);
+      await submitPR(state, owner, repo, true, images ?? []);
       break;
     case "edit": {
       const edited = await openInEditor(state.current.title, state.current.body);
       const updatedState = editDraft(state, edited);
-      await submitPR(updatedState, owner, repo, isDraft);
+      await submitPR(updatedState, owner, repo, isDraft, images ?? []);
       break;
     }
     case "cancel":
@@ -510,14 +618,69 @@ async function createWithoutAI(
 }
 
 /**
- * Submit the PR to GitHub.
+ * Submit the PR to GitHub. If images are attached, upload them first
+ * and insert their URLs into the body.
  */
 async function submitPR(
   state: DraftState,
   owner: string,
   repo: string,
   draft: boolean,
+  images: ImageAttachment[],
 ): Promise<void> {
+  let finalBody = state.current.body;
+
+  // Upload images if any are attached
+  if (images.length > 0) {
+    // Acquire session cookie: auto-extract → env var → interactive prompt
+    let sessionCookie: string | null = null;
+
+    try {
+      sessionCookie = await getGitHubSessionCookie();
+    } catch {
+      // Auto-extraction failed — try env var
+      sessionCookie = process.env["PR_BUILDR_GITHUB_SESSION_COOKIE"]?.trim() || null;
+    }
+
+    if (!sessionCookie) {
+      display.warn(
+        "Could not read GitHub session cookie from browser automatically.\n" +
+          "You can also set the PR_BUILDR_GITHUB_SESSION_COOKIE environment variable.",
+      );
+      sessionCookie = await promptGitHubCookie();
+    }
+
+    if (sessionCookie) {
+      const imageSpinner = ora("Uploading images...").start();
+
+      try {
+        const token = getGitHubToken();
+
+        const uploadResults = await uploadImages(images, {
+          owner,
+          repo,
+          token,
+          sessionCookie,
+          onProgress: (current, total) => {
+            imageSpinner.text = `Uploading image ${current} of ${total}...`;
+          },
+        });
+
+        finalBody = insertImagesIntoBody(state.current.body, uploadResults);
+        imageSpinner.succeed(
+          `Uploaded ${uploadResults.length} image${uploadResults.length === 1 ? "" : "s"}.`,
+        );
+      } catch (err: unknown) {
+        imageSpinner.fail("Failed to upload images.");
+        const msg = err instanceof Error ? err.message : String(err);
+        display.warn(msg);
+        display.warn("Creating PR without images. You can add them manually on GitHub.");
+      }
+    } else {
+      display.warn("No session cookie provided. Creating PR without images.");
+    }
+  }
+
   const spinner = ora("Creating pull request...").start();
 
   try {
@@ -526,7 +689,7 @@ async function submitPR(
       owner,
       repo,
       title: state.current.title,
-      body: state.current.body,
+      body: finalBody,
       head: state.head,
       base: state.base,
       draft,

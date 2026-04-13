@@ -1,4 +1,4 @@
-import { select, confirm, input } from "@inquirer/prompts";
+import { select, confirm, input, password } from "@inquirer/prompts";
 
 /**
  * Prompt the user to decide what to do with the generated draft.
@@ -125,6 +125,20 @@ export async function promptJiraNoUrlAction(
       { name: "Disable Jira integration (don't ask again)", value: "disable" as const },
     ],
   });
+}
+
+/**
+ * Prompt the user to paste their GitHub user_session cookie.
+ * Returns the cookie string, or null if the user skipped.
+ */
+export async function promptGitHubCookie(): Promise<string | null> {
+  const cookie = await password({
+    message:
+      "Paste your GitHub user_session cookie " +
+      "(Chrome DevTools: F12 → Application → Cookies → github.com → user_session):",
+    mask: "*",
+  });
+  return cookie?.trim() || null;
 }
 
 /**

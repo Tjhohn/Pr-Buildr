@@ -57,6 +57,22 @@ export { createPullRequest } from "./github/api.js";
 export { getGitHubToken } from "./github/auth.js";
 export type { CreatePRParams, PRResult } from "./github/types.js";
 
+// GitHub Images
+export { uploadImages, getRepositoryId } from "./github/images.js";
+export { getGitHubSessionCookie } from "./github/cookies.js";
+export { insertImagesIntoBody } from "./github/image-body.js";
+export {
+  getImageContentType,
+  validateImage,
+  SUPPORTED_IMAGE_TYPES,
+  MAX_IMAGE_SIZE,
+} from "./github/image-types.js";
+export type {
+  ImageAttachment,
+  ImageUploadResult,
+  UploadImageParams,
+} from "./github/image-types.js";
+
 // Jira
 export {
   inferTicketFromBranch,
