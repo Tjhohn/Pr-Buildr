@@ -1,8 +1,8 @@
 {
   "name": "pr-buildr-vscode",
   "displayName": "PR Buildr",
-  "description": "AI-powered pull request builder for VS Code — generate PR titles and descriptions from git diffs using OpenAI, Anthropic, or Ollama",
-  "version": "0.1.2",
+  "description": "AI-powered pull request builder for VS Code — generate PR titles and descriptions from git diffs, attach and preview images, with Edit/Preview markdown tabs. Supports OpenAI, Anthropic, and Ollama.",
+  "version": "0.2.0",
   "publisher": "tjhohn",
   "engines": {
     "vscode": "^1.85.0"
@@ -75,7 +75,12 @@
         "pr-buildr.defaultProvider": {
           "type": "string",
           "default": "openai",
-          "enum": ["openai", "anthropic", "ollama", "openai-compatible"],
+          "enum": [
+            "openai",
+            "anthropic",
+            "ollama",
+            "openai-compatible"
+          ],
           "description": "Default AI provider for generating PR drafts"
         },
         "pr-buildr.defaultModel": {
@@ -130,7 +135,10 @@
     "ollama",
     "git",
     "code-review",
-    "pr"
+    "pr",
+    "images",
+    "screenshots",
+    "markdown-preview"
   ],
   "license": "MIT"
 }
