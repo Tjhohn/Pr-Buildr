@@ -83,7 +83,7 @@ If none is found, a built-in default template is used.
 
 ## Jira Integration
 
-PR Buildr includes a lightweight Jira integration — no Jira API or authentication required.
+PR Buildr includes a lightweight Jira integration - no Jira API or authentication required. Takes the project "code" ex. AA and the ticket number and nif in ticket ex - "pr-AA-1234-new-copy" the PR will havev a link to the ticket!
 
 ### How it works
 
