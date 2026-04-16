@@ -29,6 +29,7 @@ import {
 import type { PrBuildrConfig, JiraTicket, ImageAttachment } from "@pr-buildr/core";
 import type { FromWebviewMessage, ToWebviewMessage } from "./messages.js";
 import { getVSCodeGitHubToken, getAIApiKey, getProviderEnvVar } from "../auth.js";
+import { githubReauthCommand } from "../commands/github-reauth.js";
 import { getVSCodeConfig } from "../config.js";
 import { randomBytes } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
@@ -163,7 +164,7 @@ async function initializePanel(context: vscode.ExtensionContext, repoRoot: strin
   }
 
   // 3. Resolve base branch
-  const base = await resolveBaseBranch(head, config);
+  const base = await resolveBaseBranch(head, config, undefined, repoRoot);
 
   // 4. Get branches and template
   const branches = await getBranches(repoRoot);
@@ -598,21 +599,72 @@ async function handleCreate(data: {
 
   sendMessage({ type: "creating" });
 
-  const result = await createPullRequest({
-    owner: panelState.owner,
-    repo: panelState.repo,
-    title: data.title,
-    body: finalBody,
-    head: panelState.head,
-    base: data.base,
-    draft: data.draft,
-    token: panelState.githubToken,
-  });
+  try {
+    const result = await createPullRequest({
+      owner: panelState.owner,
+      repo: panelState.repo,
+      title: data.title,
+      body: finalBody,
+      head: panelState.head,
+      base: data.base,
+      draft: data.draft,
+      token: panelState.githubToken,
+    });
 
-  sendMessage({
-    type: "created",
-    data: { url: result.htmlUrl, number: result.number, draft: result.draft },
-  });
+    sendMessage({
+      type: "created",
+      data: { url: result.htmlUrl, number: result.number, draft: result.draft },
+    });
+  } catch (createErr: unknown) {
+    const errMsg = createErr instanceof Error ? createErr.message : String(createErr);
+
+    // Check if this looks like an auth or token issue
+    if (isGitHubAuthOrTokenError(errMsg)) {
+      const action = await vscode.window.showErrorMessage(
+        `PR creation failed: ${errMsg}`,
+        "Re-authenticate & Retry",
+        "Cancel",
+      );
+
+      if (action === "Re-authenticate & Retry") {
+        sendMessage({
+          type: "status",
+          data: { message: "Re-authenticating with GitHub..." },
+        });
+
+        const newToken = await githubReauthCommand(panelState.context);
+        if (newToken) {
+          panelState.githubToken = newToken;
+
+          // Retry the PR creation with the new token
+          sendMessage({ type: "creating" });
+          const retryResult = await createPullRequest({
+            owner: panelState.owner,
+            repo: panelState.repo,
+            title: data.title,
+            body: finalBody,
+            head: panelState.head,
+            base: data.base,
+            draft: data.draft,
+            token: newToken,
+          });
+
+          sendMessage({
+            type: "created",
+            data: {
+              url: retryResult.htmlUrl,
+              number: retryResult.number,
+              draft: retryResult.draft,
+            },
+          });
+          return;
+        }
+      }
+    }
+
+    // If we get here, re-throw so the outer catch in handleWebviewMessage displays the error
+    throw createErr;
+  }
 }
 
 /**
@@ -675,6 +727,23 @@ function isAuthError(err: unknown): boolean {
     msg.includes("session") ||
     msg.includes("expired") ||
     msg.includes("authentication")
+  );
+}
+
+/**
+ * Check if a PR creation error message suggests a GitHub auth or token issue
+ * where re-authentication might help.
+ */
+function isGitHubAuthOrTokenError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("authentication failed") ||
+    lower.includes("permission denied") ||
+    lower.includes("401") ||
+    lower.includes("403") ||
+    lower.includes("validation error") ||
+    lower.includes("bad credentials") ||
+    lower.includes("token")
   );
 }
 

@@ -69,12 +69,24 @@ describe("resolveBaseBranch", () => {
   });
 
   it("propagates error when git detection fails", async () => {
-    mockGetDefaultBranch.mockRejectedValue(
-      new Error("Could not determine the default branch"),
-    );
+    mockGetDefaultBranch.mockRejectedValue(new Error("Could not determine the default branch"));
     const config: PrBuildrConfig = {};
     await expect(resolveBaseBranch("feature/a", config)).rejects.toThrow(
       "Could not determine the default branch",
     );
+  });
+
+  it("forwards cwd to getDefaultBranch when falling back to git detection", async () => {
+    mockGetDefaultBranch.mockResolvedValue("origin/master");
+    const config: PrBuildrConfig = {};
+    const result = await resolveBaseBranch("feature/a", config, undefined, "/my/repo");
+    expect(result).toBe("origin/master");
+    expect(mockGetDefaultBranch).toHaveBeenCalledWith("/my/repo");
+  });
+
+  it("does not call getDefaultBranch when explicit base is provided", async () => {
+    const config: PrBuildrConfig = {};
+    await resolveBaseBranch("feature/a", config, "develop", "/my/repo");
+    expect(mockGetDefaultBranch).not.toHaveBeenCalled();
   });
 });

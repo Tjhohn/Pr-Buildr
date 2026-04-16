@@ -10,7 +10,7 @@ const program = new Command();
 program
   .name("pr-buildr")
   .description("AI-powered pull request builder — generate PR titles and bodies from git diffs")
-  .version("0.1.0");
+  .version("0.2.1");
 
 program.addCommand(createCommand);
 program.addCommand(setBaseCommand);

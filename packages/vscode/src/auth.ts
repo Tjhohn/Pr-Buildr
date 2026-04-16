@@ -18,12 +18,25 @@ function secretKey(provider: string): string {
  * Get a GitHub token for API authentication.
  *
  * Resolution order:
- * 1. VS Code built-in GitHub auth (auto-prompts sign-in on first use)
- * 2. GITHUB_TOKEN env var
- * 3. GH_TOKEN env var
+ * 1. VS Code built-in GitHub auth — silent check (use existing session without prompting)
+ * 2. VS Code built-in GitHub auth — interactive (prompts sign-in if no session)
+ * 3. GITHUB_TOKEN env var
+ * 4. GH_TOKEN env var
  */
 export async function getVSCodeGitHubToken(): Promise<string> {
-  // 1. VS Code GitHub auth (OAuth)
+  // 1. Try to get an existing session silently (no browser popup)
+  try {
+    const existing = await vscode.authentication.getSession("github", ["repo"], {
+      silent: true,
+    });
+    if (existing) {
+      return existing.accessToken;
+    }
+  } catch {
+    // Silent check failed — fall through
+  }
+
+  // 2. No existing session — prompt for sign-in
   try {
     const session = await vscode.authentication.getSession("github", ["repo"], {
       createIfNone: true,
@@ -35,20 +48,21 @@ export async function getVSCodeGitHubToken(): Promise<string> {
     // User cancelled or auth not available
   }
 
-  // 2. GITHUB_TOKEN env var
+  // 3. GITHUB_TOKEN env var
   const githubToken = process.env["GITHUB_TOKEN"];
   if (githubToken) {
     return githubToken;
   }
 
-  // 3. GH_TOKEN env var
+  // 4. GH_TOKEN env var
   const ghToken = process.env["GH_TOKEN"];
   if (ghToken) {
     return ghToken;
   }
 
   throw new Error(
-    "GitHub authentication required. Sign in via VS Code or set the GITHUB_TOKEN environment variable.",
+    "GitHub authentication required. Sign in via VS Code or set the GITHUB_TOKEN environment variable.\n" +
+      "If OAuth keeps failing, try: Ctrl+Shift+P → 'Accounts' → sign out of GitHub, then sign back in.",
   );
 }
 

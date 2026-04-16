@@ -9,21 +9,26 @@ const GITHUB_API_BASE = "https://api.github.com";
 export async function createPullRequest(params: CreatePRParams): Promise<PRResult> {
   const url = `${GITHUB_API_BASE}/repos/${params.owner}/${params.repo}/pulls`;
 
+  // GitHub API expects bare branch names (e.g., "master"), not local
+  // remote-tracking refs (e.g., "origin/master").
+  const base = params.base.replace(/^origin\//, "");
+  const head = params.head.replace(/^origin\//, "");
+
   let response: Response;
   try {
     response = await fetch(url, {
       method: "POST",
       headers: {
-        "Authorization": `token ${params.token}`,
-        "Accept": "application/vnd.github+json",
+        Authorization: `token ${params.token}`,
+        Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         title: params.title,
         body: params.body,
-        head: params.head,
-        base: params.base,
+        head,
+        base,
         draft: params.draft ?? false,
       }),
     });
@@ -69,10 +74,7 @@ interface GitHubErrorResponse {
   }>;
 }
 
-async function handleGitHubError(
-  response: Response,
-  params: CreatePRParams,
-): Promise<never> {
+async function handleGitHubError(response: Response, params: CreatePRParams): Promise<never> {
   let errorData: GitHubErrorResponse;
   try {
     errorData = (await response.json()) as GitHubErrorResponse;
@@ -81,50 +83,62 @@ async function handleGitHubError(
   }
 
   const message = errorData.message ?? "Unknown error";
-  const errorDetails = errorData.errors?.map((e) => e.message).filter(Boolean).join("; ");
+  const errorDetails = errorData.errors
+    ?.map((e) => e.message)
+    .filter(Boolean)
+    .join("; ");
+  // Use || (not ??) so empty string "" falls through to the next value
+  const fullErrorContext = errorDetails || message || JSON.stringify(errorData.errors ?? []);
+
+  // Always include raw response so users have diagnostic info
+  const rawResponse = `\n\nRaw response (${response.status}): ${JSON.stringify(errorData)}`;
 
   switch (response.status) {
     case 401:
       throw new Error(
         "GitHub authentication failed. Check your token.\n" +
-          "Make sure it has the 'repo' scope.",
+          "Make sure it has the 'repo' scope." +
+          rawResponse,
       );
 
     case 403:
       throw new Error(
         "GitHub permission denied. Your token may not have the 'repo' scope.\n" +
-          `Details: ${message}`,
+          `Details: ${message}` +
+          rawResponse,
       );
 
     case 404:
       throw new Error(
         `Repository not found: ${params.owner}/${params.repo}.\n` +
-          "Check that the repository exists and your token has access.",
+          "Check that the repository exists and your token has access." +
+          rawResponse,
       );
 
     case 422: {
       // Validation failed — common cases
-      const fullMessage = errorDetails ?? message;
-
-      if (fullMessage.includes("A pull request already exists")) {
+      if (fullErrorContext.includes("A pull request already exists")) {
         throw new Error(
           `A pull request already exists for ${params.head} → ${params.base}.\n` +
-            `Details: ${fullMessage}`,
+            `Details: ${fullErrorContext}` +
+            rawResponse,
         );
       }
 
-      if (fullMessage.includes("No commits between")) {
+      if (fullErrorContext.includes("No commits between")) {
         throw new Error(
-          `No commits between ${params.base} and ${params.head}. Nothing to create a PR for.`,
+          `No commits between ${params.base} and ${params.head}. Nothing to create a PR for.` +
+            rawResponse,
         );
       }
 
-      throw new Error(`GitHub validation error: ${fullMessage}`);
+      throw new Error(`GitHub validation error: ${fullErrorContext}` + rawResponse);
     }
 
     default:
       throw new Error(
-        `GitHub API error (${response.status}): ${message}${errorDetails ? ` — ${errorDetails}` : ""}`,
+        `GitHub API error (${response.status}): ${message}${errorDetails ? ` — ${errorDetails}` : ""}` +
+          rawResponse,
       );
   }
 }
