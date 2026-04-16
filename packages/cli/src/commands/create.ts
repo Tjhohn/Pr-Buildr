@@ -111,7 +111,12 @@ async function runCreate(options: CreateOptions): Promise<void> {
   }
 
   // 3. Resolve base branch
-  const baseBranch = await resolveBaseBranch(currentBranch, effectiveConfig, options.base);
+  const baseBranch = await resolveBaseBranch(
+    currentBranch,
+    effectiveConfig,
+    options.base,
+    repoRoot,
+  );
 
   display.info("Repository", `${owner}/${repo}`);
   display.info("Head", currentBranch);

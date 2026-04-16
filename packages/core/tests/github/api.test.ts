@@ -82,12 +82,35 @@ describe("createPullRequest", () => {
     expect(body.draft).toBe(true);
   });
 
+  it("strips origin/ prefix from base and head for GitHub API", async () => {
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          number: 44,
+          url: "https://api.github.com/repos/test-owner/test-repo/pulls/44",
+          html_url: "https://github.com/test-owner/test-repo/pull/44",
+          state: "open",
+          draft: false,
+        }),
+        { status: 201 },
+      ),
+    );
+
+    await createPullRequest({
+      ...baseParams,
+      base: "origin/master",
+      head: "origin/feature/test",
+    });
+
+    const body = JSON.parse(mockFetch.mock.calls[0]![1]!.body as string);
+    expect(body.base).toBe("master");
+    expect(body.head).toBe("feature/test");
+  });
+
   it("throws on 401 authentication error", async () => {
     vi.mocked(fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({ message: "Bad credentials" }),
-        { status: 401 },
-      ),
+      new Response(JSON.stringify({ message: "Bad credentials" }), { status: 401 }),
     );
 
     await expect(createPullRequest(baseParams)).rejects.toThrow("authentication failed");
@@ -95,10 +118,7 @@ describe("createPullRequest", () => {
 
   it("throws on 403 permission error", async () => {
     vi.mocked(fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({ message: "Forbidden" }),
-        { status: 403 },
-      ),
+      new Response(JSON.stringify({ message: "Forbidden" }), { status: 403 }),
     );
 
     await expect(createPullRequest(baseParams)).rejects.toThrow("permission denied");
@@ -106,12 +126,7 @@ describe("createPullRequest", () => {
 
   it("throws on 404 repo not found", async () => {
     vi.mocked(fetch).mockImplementation(() =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({ message: "Not Found" }),
-          { status: 404 },
-        ),
-      ),
+      Promise.resolve(new Response(JSON.stringify({ message: "Not Found" }), { status: 404 })),
     );
 
     await expect(createPullRequest(baseParams)).rejects.toThrow(
@@ -130,9 +145,7 @@ describe("createPullRequest", () => {
       ),
     );
 
-    await expect(createPullRequest(baseParams)).rejects.toThrow(
-      "pull request already exists",
-    );
+    await expect(createPullRequest(baseParams)).rejects.toThrow("pull request already exists");
   });
 
   it("handles 422 when no commits between branches", async () => {
@@ -149,11 +162,52 @@ describe("createPullRequest", () => {
     await expect(createPullRequest(baseParams)).rejects.toThrow("No commits between");
   });
 
+  it("falls back to top-level message when error details have no message fields", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          message: "Validation Failed",
+          errors: [{ resource: "PullRequest", code: "custom", field: "base" }],
+        }),
+        { status: 422 },
+      ),
+    );
+
+    await expect(createPullRequest(baseParams)).rejects.toThrow(
+      "GitHub validation error: Validation Failed",
+    );
+  });
+
+  it("includes raw error data when both message and details are empty", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          errors: [{ resource: "PullRequest", code: "custom" }],
+        }),
+        { status: 422 },
+      ),
+    );
+
+    // Should not produce an empty "GitHub validation error: " — must include something useful
+    const err = await createPullRequest(baseParams).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/GitHub validation error: .+/);
+    expect((err as Error).message).not.toBe("GitHub validation error: ");
+  });
+
+  it("always includes raw JSON response in error messages", async () => {
+    const errorBody = { message: "Bad credentials" };
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(errorBody), { status: 401 }));
+
+    const err = await createPullRequest(baseParams).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain("Raw response (401):");
+    expect((err as Error).message).toContain('"Bad credentials"');
+  });
+
   it("handles network error", async () => {
     vi.mocked(fetch).mockRejectedValue(new Error("fetch failed"));
 
-    await expect(createPullRequest(baseParams)).rejects.toThrow(
-      "Could not connect to GitHub API",
-    );
+    await expect(createPullRequest(baseParams)).rejects.toThrow("Could not connect to GitHub API");
   });
 });

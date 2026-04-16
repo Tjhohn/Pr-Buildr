@@ -1,6 +1,6 @@
 {
   "name": "@pr-buildr/core",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Core library for pr-buildr — config, git, AI, GitHub integration",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -18,7 +18,9 @@
       }
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=20.0.0"
   },

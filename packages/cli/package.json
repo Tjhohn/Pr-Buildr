@@ -1,12 +1,14 @@
 {
   "name": "@pr-buildr/cli",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "CLI for pr-buildr — create AI-powered pull requests from the terminal",
   "type": "module",
   "bin": {
     "pr-buildr": "./dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=20.0.0"
   },
@@ -24,6 +26,11 @@
     "chalk": "^5.3.0",
     "ora": "^8.1.0"
   },
-  "keywords": ["pull-request", "github", "ai", "cli"],
+  "keywords": [
+    "pull-request",
+    "github",
+    "ai",
+    "cli"
+  ],
   "license": "MIT"
 }

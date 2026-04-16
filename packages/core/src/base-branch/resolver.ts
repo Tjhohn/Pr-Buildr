@@ -14,6 +14,7 @@ export async function resolveBaseBranch(
   currentBranch: string,
   config: PrBuildrConfig,
   explicit?: string,
+  cwd?: string,
 ): Promise<string> {
   // 1. Explicit selection
   if (explicit) {
@@ -31,6 +32,7 @@ export async function resolveBaseBranch(
     return config.defaultBase;
   }
 
-  // 4. Auto-detect from git
-  return getDefaultBranch();
+  // 4. Auto-detect from git (cwd is critical in VS Code where
+  //    process.cwd() is not the workspace folder)
+  return getDefaultBranch(cwd);
 }

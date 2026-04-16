@@ -1,7 +1,8 @@
 import type { PrBuildrConfig } from "./schema.js";
 
 export const defaultConfig: PrBuildrConfig = {
-  defaultBase: "main",
+  // defaultBase is intentionally undefined — resolveBaseBranch will
+  // auto-detect via git (origin/main, origin/master, etc.) when not set.
   github: {
     draftByDefault: false,
   },
