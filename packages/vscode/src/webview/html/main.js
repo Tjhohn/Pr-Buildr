@@ -152,6 +152,10 @@
     if (previewTab) {
       previewTab.addEventListener("click", onPreviewTab);
     }
+
+    // Clipboard paste and drag-and-drop
+    initClipboardPaste();
+    initDragAndDrop();
   }
 
   // ── Incoming messages from extension ──
@@ -534,6 +538,142 @@
 
   function hideImageStaleWarning() {
     if (imageStaleWarning) imageStaleWarning.classList.add("hidden");
+  }
+
+  // ── Clipboard paste & drag-and-drop image support ──
+
+  var pasteImageCounter = 0;
+
+  /** Map MIME type to file extension. */
+  function mimeToExtension(mimeType) {
+    var map = {
+      "image/png": ".png",
+      "image/jpeg": ".jpg",
+      "image/gif": ".gif",
+      "image/webp": ".webp",
+      "image/svg+xml": ".svg",
+    };
+    return map[mimeType] || ".png";
+  }
+
+  /** Check if a MIME type is a supported image type. */
+  function isSupportedImageMime(mimeType) {
+    return [
+      "image/png",
+      "image/jpeg",
+      "image/gif",
+      "image/webp",
+      "image/svg+xml",
+    ].indexOf(mimeType) !== -1;
+  }
+
+  /**
+   * Read a File/Blob, convert to base64, and send a pasteImage message
+   * to the extension host.
+   */
+  function sendImageFile(file, mimeType) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var dataUrl = reader.result;
+      // Strip the "data:...;base64," prefix to get raw base64
+      var base64 = dataUrl.split(",")[1];
+      if (!base64) return;
+
+      pasteImageCounter++;
+      var ext = mimeToExtension(mimeType);
+      var fileName = file.name && file.name !== "image.png" && file.name !== "blob"
+        ? file.name
+        : "pasted-image-" + pasteImageCounter + ext;
+
+      vscode.postMessage({
+        type: "pasteImage",
+        data: {
+          base64: base64,
+          fileName: fileName,
+          contentType: mimeType,
+        },
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /** Handle clipboard paste — intercept image data from clipboard. */
+  function initClipboardPaste() {
+    document.addEventListener("paste", function (e) {
+      var items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+
+      var hasImage = false;
+      for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        if (item.kind === "file" && item.type && isSupportedImageMime(item.type)) {
+          var file = item.getAsFile();
+          if (file) {
+            hasImage = true;
+            sendImageFile(file, item.type);
+          }
+        }
+      }
+
+      // Only prevent default if we handled image data.
+      // This lets normal text paste work in textareas.
+      if (hasImage) {
+        e.preventDefault();
+      }
+    });
+  }
+
+  /** Handle drag-and-drop on image section and body textarea. */
+  function initDragAndDrop() {
+    var dropTargets = [];
+    var imageSection = document.querySelector(".image-section");
+    if (imageSection) dropTargets.push(imageSection);
+    if (bodyField) dropTargets.push(bodyField);
+
+    for (var i = 0; i < dropTargets.length; i++) {
+      (function (target) {
+        var dragCounter = 0;
+
+        target.addEventListener("dragenter", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dragCounter++;
+          target.classList.add("drag-over");
+        });
+
+        target.addEventListener("dragover", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        });
+
+        target.addEventListener("dragleave", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dragCounter--;
+          if (dragCounter <= 0) {
+            dragCounter = 0;
+            target.classList.remove("drag-over");
+          }
+        });
+
+        target.addEventListener("drop", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dragCounter = 0;
+          target.classList.remove("drag-over");
+
+          var files = e.dataTransfer && e.dataTransfer.files;
+          if (!files || files.length === 0) return;
+
+          for (var j = 0; j < files.length; j++) {
+            var file = files[j];
+            if (file.type && isSupportedImageMime(file.type)) {
+              sendImageFile(file, file.type);
+            }
+          }
+        });
+      })(dropTargets[i]);
+    }
   }
 
   // ── Escape helpers ──

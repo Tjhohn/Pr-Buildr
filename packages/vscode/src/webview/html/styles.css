@@ -379,7 +379,8 @@ h2 {
   font-family: var(--vscode-font-family);
 }
 
-.add-image-btn:hover {
+.add-image-btn:hover,
+.add-image-btn.drag-over {
   border-color: var(--vscode-focusBorder);
   color: var(--vscode-foreground);
 }
@@ -387,6 +388,19 @@ h2 {
 .add-image-icon {
   font-size: 24px;
   line-height: 1;
+}
+
+/* Drag-over visual feedback */
+.image-section.drag-over {
+  outline: 2px dashed var(--vscode-focusBorder);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+#body-field.drag-over {
+  outline: 2px dashed var(--vscode-focusBorder);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .image-tip {

@@ -8,8 +8,10 @@ export interface ImageAttachment {
   id: string;
   /** Original filename (e.g., "screenshot.png") */
   fileName: string;
-  /** Absolute path to the local file */
-  localPath: string;
+  /** Absolute path to the local file (present for file-picker images) */
+  localPath?: string;
+  /** Raw file data (present for pasted/dropped images that have no local path) */
+  buffer?: Buffer;
   /** Alt text for the markdown ![alt](url) */
   altText: string;
   /** MIME type (e.g., "image/png") */

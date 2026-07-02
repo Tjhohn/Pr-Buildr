@@ -58,7 +58,7 @@ export async function uploadImages(
     const image = images[i]!;
     onProgress?.(i + 1, images.length);
 
-    const fileBuffer = await readFile(image.localPath);
+    const fileBuffer = image.buffer ?? await readFile(image.localPath!);
 
     // Step 1: Request upload policy
     const policy = await requestUploadPolicy(
@@ -66,7 +66,7 @@ export async function uploadImages(
         owner,
         repo,
         repositoryId,
-        filePath: image.localPath,
+        filePath: image.localPath ?? image.fileName,
         fileName: image.fileName,
         contentType: image.contentType,
         fileSize: image.size,

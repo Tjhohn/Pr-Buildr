@@ -377,6 +377,9 @@ async function handleWebviewMessage(message: FromWebviewMessage): Promise<void> 
       case "addImage":
         await handleAddImage();
         break;
+      case "pasteImage":
+        await handlePasteImage(message.data);
+        break;
       case "removeImage":
         handleRemoveImage(message.data.id);
         break;
@@ -445,6 +448,47 @@ async function handleAddImage(): Promise<void> {
       const msg = err instanceof Error ? err.message : String(err);
       vscode.window.showWarningMessage(`Could not add image "${fileName}": ${msg}`);
     }
+  }
+}
+
+async function handlePasteImage(data: {
+  base64: string;
+  fileName: string;
+  contentType: string;
+}): Promise<void> {
+  if (!panelState) return;
+
+  try {
+    const buffer = Buffer.from(data.base64, "base64");
+    validateImage(data.fileName, buffer.length);
+
+    const contentType = getImageContentType(data.fileName);
+    if (!contentType) return;
+
+    const previewDataUrl = `data:${contentType};base64,${data.base64}`;
+
+    const id = String(panelState.nextImageId++);
+    const altText = data.fileName.replace(/\.[^.]+$/, "");
+
+    const attachment: ImageAttachment = {
+      id,
+      fileName: data.fileName,
+      buffer,
+      altText,
+      contentType,
+      size: buffer.length,
+      previewDataUrl,
+    };
+
+    panelState.images.push(attachment);
+
+    sendMessage({
+      type: "imageAdded",
+      data: { id, fileName: data.fileName, altText, previewDataUrl },
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    vscode.window.showWarningMessage(`Could not add image "${data.fileName}": ${msg}`);
   }
 }
 
@@ -970,6 +1014,9 @@ function getHtmlContent(webview: vscode.Webview, extensionUri: vscode.Uri): stri
     </div>
     <div class="image-tip hidden" id="image-tip">
       Use {image:N} in body for inline placement. Unplaced images append to end.
+    </div>
+    <div class="image-tip" id="image-paste-hint">
+      Paste from clipboard, drag &amp; drop, or click Add Image.
     </div>
     <div id="image-stale-warning" class="stale-warning hidden">
       Images added after draft generation. Click Regenerate to update placement.

@@ -113,6 +113,17 @@ export type FromWebviewMessage =
       type: "addImage";
     }
   | {
+      type: "pasteImage";
+      data: {
+        /** Base64-encoded image data (no data URL prefix) */
+        base64: string;
+        /** Generated filename, e.g. "pasted-image-1.png" */
+        fileName: string;
+        /** MIME type, e.g. "image/png" */
+        contentType: string;
+      };
+    }
+  | {
       type: "removeImage";
       data: {
         id: string;
