@@ -1007,16 +1007,22 @@ function getHtmlContent(webview: vscode.Webview, extensionUri: vscode.Uri): stri
     <label class="form-label">Images</label>
     <div class="image-section">
       <div class="image-grid" id="image-grid"></div>
-      <button class="add-image-btn" id="add-image-btn" title="Add image">
-        <span class="add-image-icon">+</span>
-        <span>Add Image</span>
-      </button>
+      <div class="image-buttons">
+        <button class="add-image-btn" id="add-image-btn" title="Add image from file">
+          <span class="add-image-icon">+</span>
+          <span>Add Image</span>
+        </button>
+        <button class="add-image-btn paste-image-btn" id="paste-image-btn" title="Paste image from clipboard">
+          <span class="add-image-icon">&#128203;</span>
+          <span>Paste Image</span>
+        </button>
+      </div>
     </div>
     <div class="image-tip hidden" id="image-tip">
       Use {image:N} in body for inline placement. Unplaced images append to end.
     </div>
     <div class="image-tip" id="image-paste-hint">
-      Paste from clipboard, drag &amp; drop, or click Add Image.
+      You can also drag &amp; drop images here or Ctrl+V to paste.
     </div>
     <div id="image-stale-warning" class="stale-warning hidden">
       Images added after draft generation. Click Regenerate to update placement.
