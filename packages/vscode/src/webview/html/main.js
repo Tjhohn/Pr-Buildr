@@ -411,15 +411,24 @@
     if (!bodyPreview) return;
     var text = (bodyField ? bodyField.value : state.body) || "";
 
-    // Replace {image:N} with actual <img> tags using data URLs
+    // Replace {image:N} with actual <img> tags using data URLs.
+    // Handle both bare {image:N} and markdown-wrapped ![alt]({image:N}) patterns,
+    // since the AI may produce either form despite prompt instructions.
     for (var i = 0; i < state.images.length; i++) {
       var img = state.images[i];
-      // Match by id
+      var imgMarkdown = "![" + img.altText + "](" + img.previewDataUrl + ")";
+
+      // First, replace markdown-wrapped patterns: ![any text]({image:N})
+      var wrappedIdPattern = new RegExp("!\\[[^\\]]*\\]\\(\\{image:" + escapeRegex(img.id) + "\\}\\)", "g");
+      text = text.replace(wrappedIdPattern, imgMarkdown);
+      var wrappedFnPattern = new RegExp("!\\[[^\\]]*\\]\\(\\{image:" + escapeRegex(img.fileName) + "\\}\\)", "gi");
+      text = text.replace(wrappedFnPattern, imgMarkdown);
+
+      // Then, replace bare {image:N} placeholders
       var idPattern = new RegExp("\\{image:" + escapeRegex(img.id) + "\\}", "g");
-      text = text.replace(idPattern, "![" + img.altText + "](" + img.previewDataUrl + ")");
-      // Match by filename
+      text = text.replace(idPattern, imgMarkdown);
       var fnPattern = new RegExp("\\{image:" + escapeRegex(img.fileName) + "\\}", "gi");
-      text = text.replace(fnPattern, "![" + img.altText + "](" + img.previewDataUrl + ")");
+      text = text.replace(fnPattern, imgMarkdown);
     }
 
     // Render markdown to HTML using marked (loaded globally)

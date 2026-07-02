@@ -149,4 +149,65 @@ describe("insertImagesIntoBody", () => {
     // Should NOT also appear in a Screenshots section
     expect(result).not.toContain("## Screenshots");
   });
+
+  // ── Markdown-wrapped placeholder tests ──
+
+  it("replaces markdown-wrapped ![alt]({image:N}) by id", () => {
+    const body = "## Visuals\n\n![screenshot]({image:1})\n\nLooks good.";
+    const result = insertImagesIntoBody(body, [img1]);
+
+    expect(result).toContain("![Login page](https://github.com/user-attachments/assets/uuid-1)");
+    expect(result).not.toContain("{image:1}");
+    expect(result).not.toContain("![screenshot]");
+  });
+
+  it("replaces markdown-wrapped ![alt]({image:filename}) by filename", () => {
+    const body = "## Visuals\n\n![my screenshot]({image:login.png})";
+    const result = insertImagesIntoBody(body, [img1]);
+
+    expect(result).toContain("![Login page](https://github.com/user-attachments/assets/uuid-1)");
+    expect(result).not.toContain("{image:login.png}");
+    expect(result).not.toContain("![my screenshot]");
+  });
+
+  it("replaces multiple markdown-wrapped placeholders", () => {
+    const body = "Login:\n![login screenshot]({image:1})\n\nDashboard:\n![dash]({image:2})";
+    const result = insertImagesIntoBody(body, [img1, img2]);
+
+    expect(result).toContain("![Login page](https://github.com/user-attachments/assets/uuid-1)");
+    expect(result).toContain("![Dashboard](https://github.com/user-attachments/assets/uuid-2)");
+    expect(result).not.toContain("{image:");
+    expect(result).not.toContain("![login screenshot]");
+    expect(result).not.toContain("![dash]");
+  });
+
+  it("handles mix of markdown-wrapped and bare placeholders", () => {
+    const body = "Wrapped: ![pic]({image:1})\nBare: {image:2}";
+    const result = insertImagesIntoBody(body, [img1, img2]);
+
+    expect(result).toContain("![Login page](https://github.com/user-attachments/assets/uuid-1)");
+    expect(result).toContain("![Dashboard](https://github.com/user-attachments/assets/uuid-2)");
+    expect(result).not.toContain("{image:");
+    expect(result).not.toContain("![pic]");
+  });
+
+  it("leaves unmatched markdown-wrapped placeholders as-is", () => {
+    const body = "See: ![unknown]({image:99})";
+    const result = insertImagesIntoBody(body, [img1]);
+
+    expect(result).toContain("![unknown]({image:99})");
+    expect(result).toContain("## Screenshots");
+    expect(result).toContain("![Login page]");
+  });
+
+  it("does not produce nested markdown from wrapped placeholders", () => {
+    const body = "![2026-04-23_15-43]({image:1})";
+    const result = insertImagesIntoBody(body, [img1]);
+
+    // Should produce clean markdown, not nested ![](![](url))
+    expect(result).toBe("![Login page](https://github.com/user-attachments/assets/uuid-1)");
+    expect(result).not.toContain("![2026-04-23_15-43]");
+    // Verify no double ![ patterns (nested markdown)
+    expect((result.match(/!\[/g) || []).length).toBe(1);
+  });
 });

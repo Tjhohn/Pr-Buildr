@@ -13,6 +13,13 @@ import type { ImageUploadResult } from "./image-types.js";
 /** Regex to match {image:...} placeholders in the body. */
 const IMAGE_PLACEHOLDER_RE = /\{image:([^}]+)\}/g;
 
+/**
+ * Regex to match markdown-wrapped image placeholders: ![any alt text]({image:...})
+ * The AI may produce this form despite instructions to use bare {image:N}.
+ * We match and replace the entire markdown image syntax to avoid nested/malformed output.
+ */
+const WRAPPED_IMAGE_PLACEHOLDER_RE = /!\[[^\]]*\]\(\{image:([^}]+)\}\)/g;
+
 /** Headings that indicate an existing screenshots/images section. */
 const SCREENSHOT_HEADING_RE = /^(#{1,3})\s+(screenshots?|images?|visual\s+changes?)\s*$/im;
 
@@ -35,8 +42,27 @@ export function insertImagesIntoBody(body: string, images: ImageUploadResult[]):
     byFileName.set(img.fileName.toLowerCase(), img);
   }
 
-  // Replace all {image:...} placeholders
-  let result = body.replace(IMAGE_PLACEHOLDER_RE, (_match, ref: string) => {
+  // First, replace markdown-wrapped placeholders: ![any text]({image:N})
+  // This must happen before bare placeholder replacement to avoid producing
+  // malformed nested markdown like ![alt](![alt](url))
+  let result = body.replace(WRAPPED_IMAGE_PLACEHOLDER_RE, (_match, ref: string) => {
+    const trimmed = ref.trim();
+
+    let img = byId.get(trimmed);
+    if (!img) {
+      img = byFileName.get(trimmed.toLowerCase());
+    }
+
+    if (img) {
+      placed.add(img.id);
+      return formatImageMarkdown(img);
+    }
+
+    return _match;
+  });
+
+  // Then, replace bare {image:...} placeholders
+  result = result.replace(IMAGE_PLACEHOLDER_RE, (_match, ref: string) => {
     const trimmed = ref.trim();
 
     // Try matching by ID first

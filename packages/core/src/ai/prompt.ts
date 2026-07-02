@@ -72,6 +72,9 @@ export function buildPrompt(
       `Place {image:N} references (e.g., {image:1}, {image:2}) in the body where each image should appear.`,
     );
     sections.push(
+      `IMPORTANT: Use {image:N} as a standalone token on its own line. Do NOT wrap it in markdown image syntax like ![alt]({image:N}). The system will automatically convert {image:N} into the correct markdown image syntax.`,
+    );
+    sections.push(
       `If the template has a screenshots, images, or visual changes section, prefer placing them there.`,
     );
     sections.push(`You may also place images inline near the relevant change descriptions.`);
