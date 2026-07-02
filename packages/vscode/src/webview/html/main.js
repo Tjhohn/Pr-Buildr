@@ -46,6 +46,7 @@
   // Image elements
   let imageGrid;
   let addImageBtn;
+  let pasteImageBtn;
   let imageTip;
   let imageStaleWarning;
   // Preview elements
@@ -77,6 +78,7 @@
     // Image elements
     imageGrid = document.getElementById("image-grid");
     addImageBtn = document.getElementById("add-image-btn");
+    pasteImageBtn = document.getElementById("paste-image-btn");
     imageTip = document.getElementById("image-tip");
     imageStaleWarning = document.getElementById("image-stale-warning");
     // Preview elements
@@ -143,6 +145,11 @@
       addImageBtn.addEventListener("click", () => {
         vscode.postMessage({ type: "addImage" });
       });
+    }
+
+    // Paste image from clipboard button
+    if (pasteImageBtn) {
+      pasteImageBtn.addEventListener("click", onPasteImage);
     }
 
     // Edit/Preview tabs
@@ -569,7 +576,7 @@
 
   /**
    * Read a File/Blob, convert to base64, and send a pasteImage message
-   * to the extension host.
+   * to the extension host. Shows errors in the status bar on failure.
    */
   function sendImageFile(file, mimeType) {
     var reader = new FileReader();
@@ -577,7 +584,10 @@
       var dataUrl = reader.result;
       // Strip the "data:...;base64," prefix to get raw base64
       var base64 = dataUrl.split(",")[1];
-      if (!base64) return;
+      if (!base64) {
+        setStatus("Failed to read image data: file appears to be empty.", true);
+        return;
+      }
 
       pasteImageCounter++;
       var ext = mimeToExtension(mimeType);
@@ -594,10 +604,68 @@
         },
       });
     };
+    reader.onerror = function () {
+      setStatus("Failed to read image file: " + (reader.error ? reader.error.message : "unknown error"), true);
+    };
     reader.readAsDataURL(file);
   }
 
-  /** Handle clipboard paste — intercept image data from clipboard. */
+  /**
+   * Handle "Paste Image" button click.
+   * Uses navigator.clipboard.read() to read image data from the system clipboard.
+   */
+  function onPasteImage() {
+    if (!navigator.clipboard || !navigator.clipboard.read) {
+      setStatus("Clipboard API not available. Try the Add Image button instead.", true);
+      return;
+    }
+
+    setStatus("Reading clipboard...", false);
+
+    navigator.clipboard.read().then(function (clipboardItems) {
+      var foundImage = false;
+
+      for (var i = 0; i < clipboardItems.length; i++) {
+        var item = clipboardItems[i];
+        var imageType = null;
+
+        // Find the first supported image type in this clipboard item
+        for (var j = 0; j < item.types.length; j++) {
+          if (isSupportedImageMime(item.types[j])) {
+            imageType = item.types[j];
+            break;
+          }
+        }
+
+        if (imageType) {
+          foundImage = true;
+          // Use an IIFE to capture imageType in the closure
+          (function (type) {
+            item.getType(type).then(function (blob) {
+              sendImageFile(blob, type);
+              setStatus("Image pasted from clipboard.", false);
+            }).catch(function (err) {
+              setStatus("Failed to read image from clipboard: " + (err.message || err), true);
+            });
+          })(imageType);
+          break; // Only process the first image
+        }
+      }
+
+      if (!foundImage) {
+        setStatus("No image found in clipboard. Copy an image first, then click Paste Image.", true);
+      }
+    }).catch(function (err) {
+      var msg = err.message || String(err);
+      if (msg.indexOf("denied") !== -1 || msg.indexOf("permission") !== -1 || msg.indexOf("not allowed") !== -1) {
+        setStatus("Clipboard permission denied. Your browser or VS Code may have blocked clipboard access.", true);
+      } else {
+        setStatus("Failed to access clipboard: " + msg, true);
+      }
+    });
+  }
+
+  /** Handle clipboard paste event — intercept image data from keyboard Ctrl+V / Cmd+V. */
   function initClipboardPaste() {
     document.addEventListener("paste", function (e) {
       var items = e.clipboardData && e.clipboardData.items;
@@ -619,61 +687,71 @@
       // This lets normal text paste work in textareas.
       if (hasImage) {
         e.preventDefault();
+        setStatus("Image pasted from clipboard.", false);
       }
     });
   }
 
-  /** Handle drag-and-drop on image section and body textarea. */
+  /**
+   * Handle drag-and-drop on the entire document body.
+   * Listens at the body level so drops work anywhere in the webview,
+   * with visual feedback on the image section.
+   */
   function initDragAndDrop() {
-    var dropTargets = [];
     var imageSection = document.querySelector(".image-section");
-    if (imageSection) dropTargets.push(imageSection);
-    if (bodyField) dropTargets.push(bodyField);
+    var dragCounter = 0;
 
-    for (var i = 0; i < dropTargets.length; i++) {
-      (function (target) {
-        var dragCounter = 0;
+    document.body.addEventListener("dragenter", function (e) {
+      e.preventDefault();
+      dragCounter++;
+      if (imageSection) imageSection.classList.add("drag-over");
+    });
 
-        target.addEventListener("dragenter", function (e) {
-          e.preventDefault();
-          e.stopPropagation();
-          dragCounter++;
-          target.classList.add("drag-over");
-        });
+    document.body.addEventListener("dragover", function (e) {
+      e.preventDefault();
+      // Required to allow drop — must set dropEffect
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    });
 
-        target.addEventListener("dragover", function (e) {
-          e.preventDefault();
-          e.stopPropagation();
-        });
+    document.body.addEventListener("dragleave", function (e) {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        if (imageSection) imageSection.classList.remove("drag-over");
+      }
+    });
 
-        target.addEventListener("dragleave", function (e) {
-          e.preventDefault();
-          e.stopPropagation();
-          dragCounter--;
-          if (dragCounter <= 0) {
-            dragCounter = 0;
-            target.classList.remove("drag-over");
-          }
-        });
+    document.body.addEventListener("drop", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounter = 0;
+      if (imageSection) imageSection.classList.remove("drag-over");
 
-        target.addEventListener("drop", function (e) {
-          e.preventDefault();
-          e.stopPropagation();
-          dragCounter = 0;
-          target.classList.remove("drag-over");
+      var files = e.dataTransfer && e.dataTransfer.files;
+      if (!files || files.length === 0) {
+        setStatus("Drop failed: no files received. VS Code may have intercepted the drop.", true);
+        return;
+      }
 
-          var files = e.dataTransfer && e.dataTransfer.files;
-          if (!files || files.length === 0) return;
+      var imageCount = 0;
+      var skippedCount = 0;
+      for (var j = 0; j < files.length; j++) {
+        var file = files[j];
+        if (file.type && isSupportedImageMime(file.type)) {
+          imageCount++;
+          sendImageFile(file, file.type);
+        } else {
+          skippedCount++;
+        }
+      }
 
-          for (var j = 0; j < files.length; j++) {
-            var file = files[j];
-            if (file.type && isSupportedImageMime(file.type)) {
-              sendImageFile(file, file.type);
-            }
-          }
-        });
-      })(dropTargets[i]);
-    }
+      if (imageCount > 0) {
+        setStatus("Dropped " + imageCount + " image" + (imageCount > 1 ? "s" : "") + ".", false);
+      } else if (skippedCount > 0) {
+        setStatus("Dropped files are not supported image types. Supported: PNG, JPG, GIF, WebP, SVG.", true);
+      }
+    });
   }
 
   // ── Escape helpers ──

@@ -1,4 +1,4 @@
-import * as vscode from "vscode";
+  import * as vscode from "vscode";
 
 const SESSION_COOKIE_KEY = "pr-buildr.githubSessionCookie";
 const MAX_RETRY_ATTEMPTS = 3;

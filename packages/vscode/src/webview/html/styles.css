@@ -362,9 +362,15 @@ h2 {
   background: rgba(200, 0, 0, 0.8);
 }
 
+.image-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .add-image-btn {
   width: 140px;
-  height: 140px;
+  height: 64px;
   border: 2px dashed var(--vscode-widget-border, #555);
   border-radius: 6px;
   background: transparent;
@@ -386,7 +392,7 @@ h2 {
 }
 
 .add-image-icon {
-  font-size: 24px;
+  font-size: 20px;
   line-height: 1;
 }
 
@@ -395,12 +401,7 @@ h2 {
   outline: 2px dashed var(--vscode-focusBorder);
   outline-offset: 4px;
   border-radius: 6px;
-}
-
-#body-field.drag-over {
-  outline: 2px dashed var(--vscode-focusBorder);
-  outline-offset: 2px;
-  border-radius: 4px;
+  background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.04));
 }
 
 .image-tip {
